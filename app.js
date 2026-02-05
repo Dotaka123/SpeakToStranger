@@ -73,6 +73,44 @@ app.get('/api/active-chats', async (req, res) => {
     }
 });
 
+// Ajouter les routes d'administration
+const adminRoutes = require('./admin/dashboard');
+const auth = require('./middleware/auth');
+
+// Servir les fichiers statiques pour l'interface admin
+app.use('/admin/static', express.static('public'));
+
+// EJS pour les vues
+app.set('view engine', 'ejs');
+app.set('views', './views');
+
+// Routes d'administration (protégées)
+app.use('/admin', adminRoutes);
+
+// Tâche planifiée pour vérifier les signalements critiques
+const NotificationService = require('./services/notificationService');
+const notificationService = new NotificationService();
+
+cron.schedule('*/1 * * * *', async () => {
+    // Vérifier les signalements critiques chaque minute
+    await notificationService.checkCriticalReports();
+});
+
+// API pour les statistiques en temps réel
+app.get('/api/reports/stats', async (req, res) => {
+    const stats = {
+        pending: await Report.countDocuments({ status: 'pending' }),
+        reviewed: await Report.countDocuments({ status: 'reviewed' }),
+        resolved: await Report.countDocuments({ status: 'resolved' }),
+        last24h: await Report.countDocuments({
+            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        }),
+        blockedUsers: await User.countDocuments({ isBlocked: true })
+    };
+    
+    res.json(stats);
+});
+
 // Tâches planifiées
 cron.schedule('*/5 * * * *', async () => {
     // Nettoyer les utilisateurs inactifs de la file d'attente
