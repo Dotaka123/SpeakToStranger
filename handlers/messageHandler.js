@@ -106,46 +106,59 @@ class MessageHandler {
         setTimeout(() => this.handleStart(senderId), 1000);
     }
 
-    async handleReport(senderId, text) {
-        const user = await User.findOne({ facebookId: senderId });
-        
-        if (!user.currentChat) {
-            await this.fb.sendTextMessage(senderId, "❌ Aucune conversation active à signaler.");
-            return;
-        }
-
-        const reason = text.substring(8).trim();
-        if (!reason) {
-            await this.fb.sendTextMessage(senderId, "📝 Usage: /report [raison du signalement]");
-            return;
-        }
-
-        const chat = await Chat.findById(user.currentChat);
-        const otherUser = chat.participants.find(p => p.userId !== senderId);
-        
-        await Report.create({
-            reporterId: senderId,
-            reportedUserId: otherUser.userId,
-            chatId: chat._id,
-            reason: reason
-        });
-
-        await this.fb.sendTextMessage(senderId, "✅ Signalement enregistré. Nous examinerons la situation.");
-        
-        // Vérifier le nombre de signalements
-        const reportCount = await Report.countDocuments({ 
-            reportedUserId: otherUser.userId,
-            status: 'pending'
-        });
-        
-        if (reportCount >= 3) {
-            await User.findOneAndUpdate(
-                { facebookId: otherUser.userId },
-                { isBlocked: true }
-            );
-        }
+// Dans messageHandler.js - Mise à jour de handleReport
+async handleReport(senderId, text) {
+    const user = await User.findOne({ facebookId: senderId });
+    
+    if (!user.currentChat) {
+        await this.fb.sendTextMessage(senderId, "❌ Aucune conversation active à signaler.");
+        return;
     }
 
+    const reason = text.substring(8).trim();
+    if (!reason) {
+        await this.fb.sendTextMessage(senderId, "📝 Usage: /report [raison du signalement]");
+        return;
+    }
+
+    const chat = await Chat.findById(user.currentChat);
+    const otherUser = chat.participants.find(p => p.userId !== senderId);
+    
+    // Créer le signalement
+    const report = await Report.create({
+        reporterId: senderId,
+        reportedUserId: otherUser.userId,
+        chatId: chat._id,
+        reason: reason
+    });
+
+    // Notifier les administrateurs
+    const NotificationService = require('../services/notificationService');
+    const notificationService = new NotificationService();
+    await notificationService.notifyNewReport(report);
+
+    await this.fb.sendTextMessage(senderId, "✅ Signalement enregistré. Nous examinerons la situation dans les plus brefs délais.");
+    
+    // Vérifier le nombre de signalements
+    const reportCount = await Report.countDocuments({ 
+        reportedUserId: otherUser.userId,
+        status: 'pending'
+    });
+    
+    if (reportCount >= 3) {
+        // Suspension automatique après 3 signalements
+        await User.findOneAndUpdate(
+            { facebookId: otherUser.userId },
+            { 
+                isBlocked: true,
+                blockReason: 'Suspension automatique - Signalements multiples'
+            }
+        );
+        
+        // Notifier les admins de la suspension automatique
+        await notificationService.notifyCriticalReport(report);
+    }
+}
     async handleInterests(senderId, text) {
         const interests = text.substring(11).trim();
         
