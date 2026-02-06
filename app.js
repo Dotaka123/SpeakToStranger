@@ -1334,10 +1334,50 @@ app.get('/admin/dashboard-direct', async (req, res) => {
             .lean();
         
         // Récupérer les derniers chats
-        const recentChats = await Chat.find()
-            .sort({ startedAt: -1 })
-            .limit(5)
-            .lean();
+// Récupérer les derniers chats avec les bonnes données
+const recentChats = await Chat.find()
+    .sort({ createdAt: -1 })  // Utiliser createdAt si startedAt n'existe pas
+    .limit(5)
+    .lean();
+
+// Corriger les données des chats
+for (let chat of recentChats) {
+    // Si pas de startedAt, utiliser createdAt ou _id.getTimestamp()
+    if (!chat.startedAt) {
+        chat.startedAt = chat.createdAt || (chat._id ? chat._id.getTimestamp() : new Date());
+    }
+    
+    // Si pas de status, déterminer selon isActive
+    if (!chat.status) {
+        chat.status = chat.isActive ? 'active' : 'ended';
+    }
+    
+    // Si pas de messageCount, utiliser 0
+    if (chat.messageCount === undefined || chat.messageCount === null) {
+        chat.messageCount = 0;
+    }
+    
+    // Récupérer les pseudos des participants si nécessaire
+    if (!chat.participants || chat.participants.length === 0) {
+        chat.participants = [];
+        
+        if (chat.userId1) {
+            const user1 = await User.findOne({ facebookId: chat.userId1 }).select('pseudo').lean();
+            chat.participants.push({ 
+                userId: chat.userId1, 
+                pseudo: user1?.pseudo || 'Anonyme' 
+            });
+        }
+        
+        if (chat.userId2) {
+            const user2 = await User.findOne({ facebookId: chat.userId2 }).select('pseudo').lean();
+            chat.participants.push({ 
+                userId: chat.userId2, 
+                pseudo: user2?.pseudo || 'Anonyme' 
+            });
+        }
+    }
+}
         
         let html = `
         <!DOCTYPE html>
