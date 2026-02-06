@@ -1,6 +1,6 @@
 // handlers/messageHandler.js
 const facebookAPI = require('../services/facebookAPI');
-const { User, Chat, Report } = require('../models');
+const { User, Chat, Report, Stats, Message } = require('../models');
 
 class MessageHandler {
     constructor(chatManager, userManager) {
@@ -25,283 +25,221 @@ class MessageHandler {
     }
 
     // Gérer les messages entrants
-// handlers/messageHandler.js - Version corrigée
-// handlers/messageHandler.js
-async handleMessage(senderId, message) {
-    try {
-        // Marquer comme vu
-        await this.fb.markSeen(senderId);
-        
-        // Vérifier/récupérer l'utilisateur
-        let user = await User.findOne({ facebookId: senderId });
-        
-        if (!user) {
-            // Créer un nouvel utilisateur avec un pseudo par défaut
-            user = await User.create({
-                facebookId: senderId,
-                pseudo: 'Anonyme',
-                createdAt: new Date(),
-                lastActivity: new Date(),
-                status: 'online',
-                isBlocked: false,
-                totalConversations: 0,
-                totalMessages: 0
-            });
+    async handleMessage(senderId, message) {
+        try {
+            // Marquer comme vu
+            await this.fb.markSeen(senderId);
             
-            await this.sendWelcomeMessage(senderId);
-            return;
-        }
-
-        // VÉRIFICATION DU BLOCAGE
-        if (user.isBlocked === true) {
-            console.log(`🚫 Utilisateur bloqué tenté d'accès: ${senderId} (${user.pseudo})`);
+            // Vérifier/récupérer l'utilisateur
+            let user = await User.findOne({ facebookId: senderId });
             
-            await this.fb.sendTextMessage(senderId, 
-                "🚫 COMPTE SUSPENDU\n" +
-                "━━━━━━━━━━━━━━━━━━\n\n" +
-                "Votre compte a été suspendu pour violation des règles.\n\n" +
-                `Raison: ${user.blockReason || 'Violation des conditions d\'utilisation'}\n` +
-                `Date: ${user.blockedAt ? new Date(user.blockedAt).toLocaleDateString('fr-FR') : 'Non spécifiée'}\n\n` +
-                "Cette décision est définitive.\n\n" +
-                "Si vous pensez qu'il s'agit d'une erreur, contactez le support."
-            );
-            
-            // Mettre à jour le statut si nécessaire
-            if (user.status !== 'blocked') {
-                user.status = 'blocked';
-                await user.save();
+            if (!user) {
+                // Créer un nouvel utilisateur avec un pseudo par défaut
+                user = await User.create({
+                    facebookId: senderId,
+                    pseudo: 'Anonyme',
+                    createdAt: new Date(),
+                    lastActivity: new Date(),
+                    status: 'online',
+                    isBlocked: false,
+                    totalConversations: 0,
+                    totalMessages: 0
+                });
+                
+                await this.sendWelcomeMessage(senderId);
+                return;
             }
-            
-            return; // STOP - Ne pas continuer
-        }
 
-        // Mettre à jour l'activité SEULEMENT si pas bloqué
-        user.lastActivity = new Date();
-        user.status = 'online';
-        await user.save();
+            // VÉRIFICATION DU BLOCAGE
+            if (user.isBlocked === true) {
+                console.log(`🚫 Utilisateur bloqué tenté d'accès: ${senderId} (${user.pseudo})`);
+                
+                await this.fb.sendTextMessage(senderId, 
+                    "🚫 COMPTE SUSPENDU\n" +
+                    "━━━━━━━━━━━━━━━━━━\n\n" +
+                    "Votre compte a été suspendu pour violation des règles.\n\n" +
+                    `Raison: ${user.blockReason || 'Violation des conditions d\'utilisation'}\n` +
+                    `Date: ${user.blockedAt ? new Date(user.blockedAt).toLocaleDateString('fr-FR') : 'Non spécifiée'}\n\n` +
+                    "Cette décision est définitive.\n\n" +
+                    "Si vous pensez qu'il s'agit d'une erreur, contactez le support."
+                );
+                
+                if (user.status !== 'blocked') {
+                    user.status = 'blocked';
+                    await user.save();
+                }
+                
+                return;
+            }
 
-        // Extraire le texte du message
-        const text = message.text?.toLowerCase().trim();
+            // Mettre à jour l'activité
+            user.lastActivity = new Date();
+            user.status = 'online';
+            await user.save();
 
-        // Traiter les commandes
-        if (text?.startsWith('/')) {
-            await this.handleCommand(senderId, text);
-            return;
-        }
+            // Extraire le texte du message
+            const text = message.text?.toLowerCase().trim();
 
-        // Si en conversation, traiter selon le type de message
-        if (this.chatManager.isInChat(senderId)) {
-            // Récupérer les infos du chat actif
-            const chatInfo = this.chatManager.activeChats.get(senderId);
-            
-            if (chatInfo && chatInfo.chatId) {
-                // Déterminer le type de message et le stocker
-                if (message.text) {
-                    // Message texte
-                    await this.storeMessage(chatInfo.chatId, senderId, user.pseudo, chatInfo.partnerId, {
-                        content: message.text,
-                        type: 'text'
-                    });
-                    
-                } else if (message.attachments && message.attachments.length > 0) {
-                    // Pièces jointes (images, vidéos, etc.)
-                    for (const attachment of message.attachments) {
-                        const mediaType = attachment.type;
-                        const mediaUrl = attachment.payload?.url;
-                        
+            // Traiter les commandes
+            if (text?.startsWith('/')) {
+                await this.handleCommand(senderId, message.text);
+                return;
+            }
+
+            // Si en conversation, transférer le message
+            if (this.chatManager.isInChat(senderId)) {
+                const chatInfo = this.chatManager.activeChats.get(senderId);
+                
+                if (chatInfo && chatInfo.chatId) {
+                    // Stocker le message selon son type
+                    if (message.text) {
                         await this.storeMessage(chatInfo.chatId, senderId, user.pseudo, chatInfo.partnerId, {
-                            content: `[${mediaType}]`,
-                            type: mediaType,
-                            mediaUrl: mediaUrl
+                            content: message.text,
+                            type: 'text'
+                        });
+                    } else if (message.attachments && message.attachments.length > 0) {
+                        for (const attachment of message.attachments) {
+                            await this.storeMessage(chatInfo.chatId, senderId, user.pseudo, chatInfo.partnerId, {
+                                content: `[${attachment.type}]`,
+                                type: attachment.type,
+                                mediaUrl: attachment.payload?.url
+                            });
+                        }
+                    } else if (message.sticker_id) {
+                        await this.storeMessage(chatInfo.chatId, senderId, user.pseudo, chatInfo.partnerId, {
+                            content: '[Sticker]',
+                            type: 'sticker',
+                            mediaUrl: message.sticker_id
                         });
                     }
                     
-                } else if (message.sticker_id) {
-                    // Sticker
-                    await this.storeMessage(chatInfo.chatId, senderId, user.pseudo, chatInfo.partnerId, {
-                        content: '[Sticker]',
-                        type: 'sticker',
-                        mediaUrl: message.sticker_id
-                    });
+                    await this.updateChatStats(chatInfo.chatId);
                 }
                 
-                // Mettre à jour les stats du chat
-                await this.updateChatStats(chatInfo.chatId);
+                await this.chatManager.relayMessage(senderId, message);
+                return;
             }
-            
-            // Transférer le message au partenaire
-            await this.chatManager.relayMessage(senderId, message);
-            return;
+
+            // Si pas en conversation et pas une commande, afficher l'aide
+            await this.showHelp(senderId);
+
+        } catch (error) {
+            console.error('Erreur traitement message:', error);
+            await this.fb.sendTextMessage(senderId, 
+                "❌ Une erreur s'est produite. Veuillez réessayer.\n\n" +
+                "Tapez /help pour voir les commandes disponibles."
+            );
         }
-
-        // Si pas en conversation et pas une commande, afficher l'aide
-        await this.showHelp(senderId);
-
-    } catch (error) {
-        console.error('Erreur traitement message:', error);
-        await this.fb.sendTextMessage(senderId, 
-            "❌ Une erreur s'est produite. Veuillez réessayer.\n\n" +
-            "Tapez /help pour voir les commandes disponibles."
-        );
     }
-}
 
-// Nouvelle méthode pour stocker les messages dans la collection séparée
-async storeMessage(chatId, senderId, senderPseudo, recipientId, messageData) {
-    try {
-        const { Message } = require('../models');
-        
-        await Message.create({
-            chatId: chatId,
-            senderId: senderId,
-            senderPseudo: senderPseudo || 'Anonyme',
-            recipientId: recipientId,
-            content: messageData.content,
-            type: messageData.type || 'text',
-            mediaUrl: messageData.mediaUrl || null,
-            timestamp: new Date()
-        });
-        
-        console.log(`📝 Message stocké - Type: ${messageData.type}, Chat: ${chatId}`);
-        
-    } catch (error) {
-        console.error('Erreur stockage message:', error);
+    // Stocker les messages dans la collection séparée
+    async storeMessage(chatId, senderId, senderPseudo, recipientId, messageData) {
+        try {
+            await Message.create({
+                chatId: chatId,
+                senderId: senderId,
+                senderPseudo: senderPseudo || 'Anonyme',
+                recipientId: recipientId,
+                content: messageData.content,
+                type: messageData.type || 'text',
+                mediaUrl: messageData.mediaUrl || null,
+                timestamp: new Date()
+            });
+            
+            console.log(`📝 Message stocké - Type: ${messageData.type}, Chat: ${chatId}`);
+            
+        } catch (error) {
+            console.error('Erreur stockage message:', error);
+        }
     }
-}
 
-// Nouvelle méthode pour mettre à jour les stats du chat
-async updateChatStats(chatId) {
-    try {
-        const { Chat } = require('../models');
-        
-        await Chat.findByIdAndUpdate(chatId, {
-            $inc: { messageCount: 1 },
-            lastActivity: new Date()
-        });
-        
-    } catch (error) {
-        console.error('Erreur mise à jour stats chat:', error);
+    // Mettre à jour les stats du chat
+    async updateChatStats(chatId) {
+        try {
+            await Chat.findByIdAndUpdate(chatId, {
+                $inc: { messageCount: 1 },
+                lastActivity: new Date()
+            });
+        } catch (error) {
+            console.error('Erreur mise à jour stats chat:', error);
+        }
     }
-}
-
-// Méthode optionnelle pour récupérer l'historique des messages
-async getChatHistory(chatId, limit = 50) {
-    try {
-        const { Message } = require('../models');
-        
-        const messages = await Message.find({ chatId })
-            .sort({ timestamp: -1 })
-            .limit(limit)
-            .lean();
-        
-        return messages.reverse(); // Remettre dans l'ordre chronologique
-        
-    } catch (error) {
-        console.error('Erreur récupération historique:', error);
-        return [];
-    }
-}
-
-// Méthode pour nettoyer les vieux messages (à appeler périodiquement)
-async cleanOldMessages(daysToKeep = 30) {
-    try {
-        const { Message } = require('../models');
-        
-        const cutoffDate = new Date(Date.now() - daysToKeep * 24 * 60 * 60 * 1000);
-        
-        const result = await Message.deleteMany({
-            timestamp: { $lt: cutoffDate }
-        });
-        
-        console.log(`🗑️ ${result.deletedCount} messages de plus de ${daysToKeep} jours supprimés`);
-        
-    } catch (error) {
-        console.error('Erreur nettoyage messages:', error);
-    }
-}
 
     // Gérer les commandes
-// Méthode pour gérer les commandes
-async handleCommand(senderId, messageText) {
-    try {
-        // IMPORTANT : Définir parts ici !
-        const parts = messageText.toLowerCase().split(' ');
-        const command = parts[0];
-        
-        console.log(`📝 Commande reçue: ${command} de ${senderId}`);
-        
-        switch(command) {
-            case '/start':
-            case '/help':
-                await this.showHelp(senderId);
-                break;
-                
-            case '/chercher':
-            case '/search':
-            case '/nouveau':
-            case '/new':
-                await this.chatManager.addToQueue(senderId);
-                break;
-                
-            case '/stop':
-            case '/quitter':
-            case '/leave':
-                await this.handleStop(senderId);
-                break;
-                
-            case '/pseudo':
-                // Récupérer le nouveau pseudo (tout après /pseudo)
-                const newPseudo = messageText.slice(7).trim(); // Enlever '/pseudo '
-                await this.changePseudo(senderId, newPseudo);
-                break;
-                
-            case '/profil':
-            case '/profile':
-                await this.showProfile(senderId);
-                break;
-                
-            case '/stats':
-                await this.showUserStats(senderId);
-                break;
-                
-            case '/infos':
-            case '/info':
-                await this.showBotStats(senderId);
-                break;
-                
-            case '/signaler':
-            case '/report':
-                await this.handleReport(senderId);
-                break;
-                
-            case '/feedback':
-                // Récupérer le feedback (tout après /feedback)
-                const feedback = messageText.slice(9).trim(); // Enlever '/feedback '
-                await this.handleFeedback(senderId, feedback);
-                break;
-                
-            default:
-                // Si la commande n'est pas reconnue
-                await this.fb.sendTextMessage(senderId, 
-                    "❌ Commande non reconnue.\n\n" +
-                    "Tapez /help pour voir les commandes disponibles."
-                );
-                break;
+    async handleCommand(senderId, messageText) {
+        try {
+            const parts = messageText.toLowerCase().split(' ');
+            const command = parts[0];
+            
+            console.log(`📝 Commande reçue: ${command} de ${senderId}`);
+            
+            switch(command) {
+                case '/start':
+                case '/help':
+                    await this.showHelp(senderId);
+                    break;
+                    
+                case '/chercher':
+                case '/search':
+                case '/nouveau':
+                case '/new':
+                    await this.chatManager.addToQueue(senderId);
+                    break;
+                    
+                case '/stop':
+                case '/quitter':
+                case '/leave':
+                    await this.handleStop(senderId);
+                    break;
+                    
+                case '/pseudo':
+                    const newPseudo = messageText.slice(7).trim();
+                    await this.changePseudo(senderId, newPseudo);
+                    break;
+                    
+                case '/profil':
+                case '/profile':
+                    await this.showProfile(senderId);
+                    break;
+                    
+                case '/stats':
+                    await this.showUserStats(senderId);
+                    break;
+                    
+                case '/infos':
+                case '/info':
+                    await this.showBotStats(senderId);
+                    break;
+                    
+                case '/signaler':
+                case '/report':
+                    await this.handleReport(senderId);
+                    break;
+                    
+                case '/feedback':
+                    const feedback = messageText.slice(9).trim();
+                    await this.handleFeedback(senderId, feedback);
+                    break;
+                    
+                default:
+                    await this.fb.sendTextMessage(senderId, 
+                        "❌ Commande non reconnue.\n\n" +
+                        "Tapez /help pour voir les commandes disponibles."
+                    );
+                    break;
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.error('Erreur traitement commande:', error);
+            await this.fb.sendTextMessage(senderId, 
+                "❌ Une erreur s'est produite.\n\n" +
+                "Veuillez réessayer ou tapez /help pour l'aide."
+            );
+            return false;
         }
-        
-        return true;
-        
-    } catch (error) {
-        console.error('Erreur traitement commande:', error);
-        
-        await this.fb.sendTextMessage(senderId, 
-            "❌ Une erreur s'est produite.\n\n" +
-            "Veuillez réessayer ou tapez /help pour l'aide."
-        );
-        
-        return false;
     }
-}
 
     // Message de bienvenue
     async sendWelcomeMessage(senderId) {
@@ -313,7 +251,10 @@ async handleCommand(senderId, messageText) {
             "/chercher - 🔍 Trouver un partenaire\n" +
             "/stop - 🛑 Quitter la conversation\n" +
             "/pseudo - ✏️ Changer votre pseudo\n" +
+            "/profil - 👤 Voir votre profil\n" +
             "/stats - 📊 Voir vos statistiques\n" +
+            "/infos - 📈 Statistiques du bot\n" +
+            "/signaler - 🚨 Signaler un utilisateur\n" +
             "/help - ❓ Afficher cette aide\n\n" +
             "🎯 Commencez par taper /chercher pour trouver quelqu'un !";
 
@@ -331,9 +272,12 @@ async handleCommand(senderId, messageText) {
             "━━━━━━━━━━━━━━━━━━\n" +
             "/chercher - 🔍 Trouver un partenaire\n" +
             "/stop - 🛑 Quitter la conversation\n" +
-            "/pseudo - ✏️ Changer votre pseudo\n" +
+            "/pseudo [nom] - ✏️ Changer votre pseudo\n" +
+            "/profil - 👤 Voir votre profil\n" +
             "/stats - 📊 Voir vos statistiques\n" +
+            "/infos - 📈 Statistiques du bot\n" +
             "/signaler - 🚨 Signaler un utilisateur\n" +
+            "/feedback [message] - 💬 Envoyer un feedback\n" +
             "/help - ❓ Afficher cette aide\n\n" +
             "💡 CONSEILS :\n" +
             "• Restez respectueux\n" +
@@ -344,308 +288,339 @@ async handleCommand(senderId, messageText) {
         await this.fb.sendTextMessage(senderId, helpMessage);
     }
 
-    // Commencer une recherche
-    async startSearch(senderId) {
-        // Vérifier si déjà en conversation
-        if (this.chatManager.isInChat(senderId)) {
-            await this.fb.sendTextMessage(senderId, 
-                "💬 Vous êtes déjà en conversation !\n\n" +
-                "Tapez /stop pour quitter la conversation actuelle."
-            );
-            return;
-        }
-
-        // Vérifier si déjà en recherche
-        if (this.chatManager.isInQueue(senderId)) {
-            await this.fb.sendTextMessage(senderId, 
-                "🔄 Vous êtes déjà en recherche...\n\n" +
-                "Patience, nous cherchons quelqu'un pour vous ! 🔍"
-            );
-            return;
-        }
-
-        // Ajouter à la file d'attente
-        await this.chatManager.addToQueue(senderId);
-    }
-
-    // Arrêter une conversation
-    async stopChat(senderId) {
-        if (!this.chatManager.isInChat(senderId)) {
-            // Vérifier si en file d'attente
+    // Gérer /stop
+    async handleStop(senderId) {
+        try {
+            if (this.chatManager.isInChat(senderId)) {
+                await this.chatManager.endChat(senderId);
+                return;
+            }
+            
             if (this.chatManager.isInQueue(senderId)) {
                 await this.chatManager.removeFromQueue(senderId);
-                await this.fb.sendTextMessage(senderId, 
-                    "🔚 Recherche annulée.\n\n" +
-                    "Tapez /chercher pour relancer une recherche."
+                await this.fb.sendTextMessage(senderId,
+                    "✅ Recherche annulée.\n\n" +
+                    "Tapez /chercher quand vous voudrez trouver un partenaire."
                 );
-            } else {
-                await this.fb.sendTextMessage(senderId, 
-                    "❌ Vous n'êtes pas en conversation.\n\n" +
-                    "Tapez /chercher pour trouver quelqu'un."
-                );
+                return;
             }
-            return;
+            
+            await this.fb.sendTextMessage(senderId,
+                "❌ Vous n'êtes ni en conversation ni en recherche.\n\n" +
+                "Tapez /chercher pour commencer !"
+            );
+            
+        } catch (error) {
+            console.error('Erreur stop:', error);
+            await this.fb.sendTextMessage(senderId,
+                "❌ Erreur lors de l'arrêt.\n\nVeuillez réessayer."
+            );
         }
-
-        await this.chatManager.endChat(senderId);
     }
 
-    // Demander le pseudo
-    async askForPseudo(senderId) {
-        await User.findOneAndUpdate(
-            { facebookId: senderId },
-            { waitingForPseudo: true }
-        );
-        
-        await this.fb.sendTextMessage(senderId, 
-            "✏️ Entrez votre nouveau pseudo :\n\n" +
-            "⚠️ Choisissez un pseudo respectueux\n" +
-            "(max 20 caractères)"
-        );
-    }
+    // Changer de pseudo
+    async changePseudo(senderId, newPseudo) {
+        try {
+            if (!newPseudo || newPseudo.trim() === '') {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Format incorrect !\n\n" +
+                    "Utilisation : /pseudo VotreNouveauPseudo\n\n" +
+                    "Exemple : /pseudo SuperChat123"
+                );
+                return;
+            }
 
-    // Méthode pour changer de pseudo
-async changePseudo(senderId, newPseudo) {
-    try {
-        // Vérifier si un pseudo a été fourni
-        if (!newPseudo || newPseudo.trim() === '') {
-            await this.fb.sendTextMessage(senderId,
-                "❌ Format incorrect !\n\n" +
-                "Utilisation : /pseudo VotreNouveauPseudo\n\n" +
-                "Exemple : /pseudo SuperChat123\n\n" +
-                "Règles :\n" +
-                "• Entre 3 et 20 caractères\n" +
-                "• Lettres, chiffres et underscores uniquement\n" +
-                "• Pas d'espaces (utilisez _ à la place)"
-            );
-            return;
-        }
+            newPseudo = newPseudo.trim();
+            
+            if (newPseudo.length < 3) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Pseudo trop court !\n\n" +
+                    "Le pseudo doit contenir au moins 3 caractères."
+                );
+                return;
+            }
 
-        // Nettoyer et valider le pseudo
-        newPseudo = newPseudo.trim();
-        
-        // Vérifications
-        if (newPseudo.length < 3) {
-            await this.fb.sendTextMessage(senderId,
-                "❌ Pseudo trop court !\n\n" +
-                "Le pseudo doit contenir au moins 3 caractères."
-            );
-            return;
-        }
+            if (newPseudo.length > 20) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Pseudo trop long !\n\n" +
+                    "Le pseudo ne peut pas dépasser 20 caractères."
+                );
+                return;
+            }
 
-        if (newPseudo.length > 20) {
-            await this.fb.sendTextMessage(senderId,
-                "❌ Pseudo trop long !\n\n" +
-                "Le pseudo ne peut pas dépasser 20 caractères."
-            );
-            return;
-        }
+            const pseudoRegex = /^[a-zA-Z0-9_]+$/;
+            if (!pseudoRegex.test(newPseudo)) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Caractères non autorisés !\n\n" +
+                    "Utilisez uniquement : lettres, chiffres et underscores"
+                );
+                return;
+            }
 
-        // Vérifier les caractères autorisés (lettres, chiffres, underscores)
-        const pseudoRegex = /^[a-zA-Z0-9_]+$/;
-        if (!pseudoRegex.test(newPseudo)) {
-            await this.fb.sendTextMessage(senderId,
-                "❌ Caractères non autorisés !\n\n" +
-                "Le pseudo peut contenir uniquement :\n" +
-                "• Lettres (a-z, A-Z)\n" +
-                "• Chiffres (0-9)\n" +
-                "• Underscores (_)\n\n" +
-                "Pas d'espaces, pas de caractères spéciaux."
-            );
-            return;
-        }
-
-        // Vérifier si le pseudo est déjà pris
-        const existingUser = await User.findOne({ 
-            pseudo: newPseudo,
-            facebookId: { $ne: senderId } // Exclure l'utilisateur actuel
-        });
-
-        if (existingUser) {
-            await this.fb.sendTextMessage(senderId,
-                "❌ Ce pseudo est déjà pris !\n\n" +
-                "Choisissez un autre pseudo ou ajoutez des chiffres.\n\n" +
-                "Suggestions :\n" +
-                `• ${newPseudo}${Math.floor(Math.random() * 999)}\n` +
-                `• ${newPseudo}_${Math.floor(Math.random() * 99)}\n` +
-                `• Super_${newPseudo}`
-            );
-            return;
-        }
-
-        // Récupérer l'ancien pseudo
-        const user = await User.findOne({ facebookId: senderId });
-        const oldPseudo = user?.pseudo || 'Anonyme';
-
-        // Mettre à jour le pseudo
-        await User.findOneAndUpdate(
-            { facebookId: senderId },
-            { 
+            const existingUser = await User.findOne({ 
                 pseudo: newPseudo,
-                lastPseudoChange: new Date()
-            },
-            { upsert: true }
-        );
+                facebookId: { $ne: senderId }
+            });
 
-        // Si l'utilisateur est en conversation, mettre à jour dans le chat actif
-        if (this.chatManager.isInChat(senderId)) {
+            if (existingUser) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Ce pseudo est déjà pris !\n\n" +
+                    "Suggestions :\n" +
+                    `• ${newPseudo}${Math.floor(Math.random() * 999)}\n` +
+                    `• ${newPseudo}_${Math.floor(Math.random() * 99)}`
+                );
+                return;
+            }
+
+            const user = await User.findOne({ facebookId: senderId });
+            const oldPseudo = user?.pseudo || 'Anonyme';
+
+            await User.findOneAndUpdate(
+                { facebookId: senderId },
+                { 
+                    pseudo: newPseudo,
+                    lastPseudoChange: new Date()
+                },
+                { upsert: true }
+            );
+
+            if (this.chatManager.isInChat(senderId)) {
+                const chatInfo = this.chatManager.getChatInfo(senderId);
+                if (chatInfo && chatInfo.chatId) {
+                    await Chat.findOneAndUpdate(
+                        { 
+                            _id: chatInfo.chatId,
+                            'participants.userId': senderId 
+                        },
+                        { 
+                            '$set': { 'participants.$.pseudo': newPseudo }
+                        }
+                    );
+
+                    await this.fb.sendTextMessage(chatInfo.partnerId,
+                        `📝 ${oldPseudo} a changé son pseudo en : ${newPseudo}`
+                    );
+                }
+            }
+
+            await this.fb.sendTextMessage(senderId,
+                "✅ PSEUDO CHANGÉ AVEC SUCCÈS !\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                `Ancien : ${oldPseudo}\n` +
+                `Nouveau : ${newPseudo}\n\n` +
+                "💡 Tapez /profil pour voir vos infos"
+            );
+
+            console.log(`✅ Pseudo changé : ${oldPseudo} → ${newPseudo}`);
+
+        } catch (error) {
+            console.error('Erreur changement pseudo:', error);
+            await this.fb.sendTextMessage(senderId,
+                "❌ Erreur lors du changement de pseudo.\n\nRéessayez plus tard."
+            );
+        }
+    }
+
+    // Afficher le profil
+    async showProfile(senderId) {
+        try {
+            const user = await User.findOne({ facebookId: senderId });
+            
+            if (!user) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Profil non trouvé.\n\nDéfinissez un pseudo avec /pseudo"
+                );
+                return;
+            }
+
+            const memberSince = user.createdAt ? 
+                new Date(user.createdAt).toLocaleDateString('fr-FR') : 'Inconnue';
+
+            const profileMessage = 
+                "👤 VOTRE PROFIL\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                `📝 Pseudo : ${user.pseudo || 'Non défini'}\n` +
+                `💬 Conversations : ${user.totalConversations || 0}\n` +
+                `📨 Messages : ${user.totalMessages || 0}\n` +
+                `📅 Membre depuis : ${memberSince}\n` +
+                `📊 Statut : ${user.isBlocked ? '🔴 Bloqué' : '🟢 Actif'}\n\n` +
+                "Commandes :\n" +
+                "/pseudo [nom] - Changer de pseudo\n" +
+                "/stats - Statistiques détaillées";
+
+            await this.fb.sendTextMessage(senderId, profileMessage);
+
+        } catch (error) {
+            console.error('Erreur affichage profil:', error);
+            await this.fb.sendTextMessage(senderId,
+                "❌ Erreur lors de la récupération du profil."
+            );
+        }
+    }
+
+    // Afficher les stats utilisateur
+    async showUserStats(senderId) {
+        try {
+            const user = await User.findOne({ facebookId: senderId });
+            
+            if (!user) {
+                await this.fb.sendTextMessage(senderId,
+                    "📊 Aucune statistique disponible.\n\nCommencez à chatter !"
+                );
+                return;
+            }
+
+            const todayMessages = await Message.countDocuments({
+                senderId: senderId,
+                timestamp: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+            });
+
+            const statsMessage = 
+                "📊 VOS STATISTIQUES\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                `📝 Pseudo : ${user.pseudo || 'Non défini'}\n` +
+                `💬 Conversations : ${user.totalConversations || 0}\n` +
+                `📨 Messages totaux : ${user.totalMessages || 0}\n` +
+                `📅 Messages aujourd'hui : ${todayMessages}\n` +
+                `⚠️ Signalements : ${user.reportCount || 0}\n` +
+                `📅 Membre depuis : ${new Date(user.createdAt).toLocaleDateString('fr-FR')}\n\n` +
+                "Continuez à chatter ! 🚀";
+
+            await this.fb.sendTextMessage(senderId, statsMessage);
+
+        } catch (error) {
+            console.error('Erreur stats utilisateur:', error);
+            await this.fb.sendTextMessage(senderId,
+                "❌ Erreur lors de la récupération des stats."
+            );
+        }
+    }
+
+    // Afficher les stats du bot
+    async showBotStats(senderId) {
+        try {
+            const activeChats = this.chatManager.getActiveChatsCount();
+            const queueLength = this.chatManager.getQueueLength();
+            const totalUsers = await User.countDocuments();
+            const activeUsers = await User.countDocuments({ 
+                lastActivity: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } 
+            });
+            const totalChats = await Chat.countDocuments();
+            const todayChats = await Chat.countDocuments({
+                startedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+            });
+            const totalMessages = await Message.countDocuments();
+
+            const statsMessage = 
+                "📊 STATISTIQUES DU BOT\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "🔴 EN TEMPS RÉEL :\n" +
+                `• Conversations actives : ${activeChats}\n` +
+                `• En attente : ${queueLength}\n\n` +
+                "📈 AUJOURD'HUI :\n" +
+                `• Conversations : ${todayChats}\n\n` +
+                "📊 TOTAUX :\n" +
+                `• Utilisateurs : ${totalUsers}\n` +
+                `• Actifs (24h) : ${activeUsers}\n` +
+                `• Conversations : ${totalChats}\n` +
+                `• Messages : ${totalMessages}\n\n` +
+                "Bot créé avec ❤️";
+
+            await this.fb.sendTextMessage(senderId, statsMessage);
+
+        } catch (error) {
+            console.error('Erreur stats bot:', error);
+            
+            const activeChats = this.chatManager.getActiveChatsCount();
+            const queueLength = this.chatManager.getQueueLength();
+            
+            await this.fb.sendTextMessage(senderId,
+                "📊 STATISTIQUES DU BOT\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                `🔴 Actifs : ${activeChats}\n` +
+                `⏳ En attente : ${queueLength}`
+            );
+        }
+    }
+
+    // Gérer les signalements
+    async handleReport(senderId) {
+        try {
+            if (!this.chatManager.isInChat(senderId)) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Vous devez être en conversation pour signaler."
+                );
+                return;
+            }
+
             const chatInfo = this.chatManager.getChatInfo(senderId);
-            if (chatInfo && chatInfo.chatId) {
-                // Mettre à jour le pseudo dans le document Chat
-                await Chat.findOneAndUpdate(
-                    { 
-                        _id: chatInfo.chatId,
-                        'participants.userId': senderId 
-                    },
-                    { 
-                        '$set': { 'participants.$.pseudo': newPseudo }
-                    }
-                );
 
-                // Notifier le partenaire du changement
-                await this.fb.sendTextMessage(chatInfo.partnerId,
-                    `📝 ${oldPseudo} a changé son pseudo en : ${newPseudo}`
+            await Report.create({
+                reportedBy: senderId,
+                reportedUser: chatInfo.partnerId,
+                chatId: chatInfo.chatId,
+                reason: 'inappropriate_behavior',
+                timestamp: new Date()
+            });
+
+            await User.findOneAndUpdate(
+                { facebookId: chatInfo.partnerId },
+                { $inc: { reportCount: 1 } }
+            );
+
+            const reportedUser = await User.findOne({ facebookId: chatInfo.partnerId });
+            if (reportedUser && reportedUser.reportCount >= 3) {
+                await User.findOneAndUpdate(
+                    { facebookId: chatInfo.partnerId },
+                    { isBlocked: true }
                 );
             }
+
+            await this.chatManager.endChat(senderId, 'reported');
+
+            await this.fb.sendTextMessage(senderId,
+                "✅ Signalement enregistré.\n\n" +
+                "Merci de maintenir un environnement sûr.\n\n" +
+                "Tapez /chercher pour un nouveau partenaire."
+            );
+
+            console.log(`⚠️ Signalement: ${senderId} → ${chatInfo.partnerId}`);
+
+        } catch (error) {
+            console.error('Erreur signalement:', error);
+            await this.fb.sendTextMessage(senderId,
+                "❌ Erreur lors du signalement."
+            );
         }
-
-        // Message de confirmation
-        await this.fb.sendTextMessage(senderId,
-            "✅ PSEUDO CHANGÉ AVEC SUCCÈS !\n" +
-            "━━━━━━━━━━━━━━━━━━\n\n" +
-            `Ancien pseudo : ${oldPseudo}\n` +
-            `Nouveau pseudo : ${newPseudo}\n\n` +
-            "Votre nouveau pseudo sera utilisé dans toutes vos futures conversations.\n\n" +
-            "💡 Astuce : Tapez /profil pour voir vos infos"
-        );
-
-        console.log(`✅ Pseudo changé : ${oldPseudo} → ${newPseudo} (User: ${senderId})`);
-
-    } catch (error) {
-        console.error('Erreur changement pseudo:', error);
-        await this.fb.sendTextMessage(senderId,
-            "❌ Une erreur s'est produite lors du changement de pseudo.\n\n" +
-            "Veuillez réessayer plus tard."
-        );
     }
-}
-    
-    // Vérifier si on attend un pseudo
-    async checkIfWaitingForPseudo(senderId, text) {
-        const user = await User.findOne({ facebookId: senderId });
-        
-        if (!user?.waitingForPseudo) {
-            return false;
-        }
 
-        // Valider le pseudo
-        const newPseudo = text.trim();
-        
-        if (newPseudo.length === 0) {
-            await this.fb.sendTextMessage(senderId, 
-                "❌ Le pseudo ne peut pas être vide.\n\n" +
-                "Réessayez ou tapez /help pour annuler."
-            );
-            return true;
-        }
-
-        if (newPseudo.length > 20) {
-            await this.fb.sendTextMessage(senderId, 
-                "❌ Le pseudo est trop long (max 20 caractères).\n\n" +
-                "Réessayez avec un pseudo plus court."
-            );
-            return true;
-        }
-
-        // Filtrer les mots inappropriés (liste basique)
-        const inappropriateWords = ['admin', 'bot', 'fuck', 'shit', 'pute', 'salope'];
-        if (inappropriateWords.some(word => newPseudo.toLowerCase().includes(word))) {
-            await this.fb.sendTextMessage(senderId, 
-                "❌ Ce pseudo n'est pas approprié.\n\n" +
-                "Choisissez un autre pseudo."
-            );
-            return true;
-        }
-
-        // Sauvegarder le pseudo
-        await User.findOneAndUpdate(
-            { facebookId: senderId },
-            { 
-                pseudo: newPseudo,
-                waitingForPseudo: false
+    // Gérer les feedbacks
+    async handleFeedback(senderId, feedbackText) {
+        try {
+            if (!feedbackText || feedbackText.trim() === '') {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Format : /feedback Votre message\n\n" +
+                    "Exemple : /feedback Super bot !"
+                );
+                return;
             }
-        );
 
-        await this.fb.sendTextMessage(senderId, 
-            `✅ Pseudo changé avec succès !\n\n` +
-            `Vous êtes maintenant : ${newPseudo}\n\n` +
-            `Tapez /chercher pour trouver quelqu'un.`
-        );
+            console.log(`📝 Feedback de ${senderId}: ${feedbackText}`);
 
-        return true;
-    }
-
-    // Afficher les statistiques
-    async showStats(senderId) {
-        const user = await User.findOne({ facebookId: senderId });
-        
-        if (!user) {
-            await this.fb.sendTextMessage(senderId, "❌ Erreur lors de la récupération des statistiques.");
-            return;
-        }
-
-        const memberSince = user.createdAt ? 
-            new Date(user.createdAt).toLocaleDateString('fr-FR') : 
-            'Inconnu';
-
-        const stats = 
-            `📊 VOS STATISTIQUES\n` +
-            `━━━━━━━━━━━━━━━━━━\n` +
-            `👤 Pseudo : ${user.pseudo || 'Non défini'}\n` +
-            `💬 Conversations : ${user.totalConversations || 0}\n` +
-            `📝 Messages envoyés : ${user.totalMessages || 0}\n` +
-            `⭐ Note moyenne : ${user.rating ? user.rating.toFixed(1) : '5.0'}/5\n` +
-            `📅 Membre depuis : ${memberSince}\n` +
-            `⚠️ Avertissements : ${user.warningCount || 0}\n\n` +
-            `Tapez /help pour voir les commandes.`;
-
-        await this.fb.sendTextMessage(senderId, stats);
-    }
-
-    // Signaler un utilisateur
-    async reportUser(senderId) {
-        const chatInfo = this.chatManager.getChatInfo(senderId);
-        
-        if (!chatInfo) {
-            await this.fb.sendTextMessage(senderId, 
-                "❌ Vous devez être en conversation pour signaler quelqu'un.\n\n" +
-                "Le signalement concerne votre partenaire actuel."
+            await this.fb.sendTextMessage(senderId,
+                "✅ Merci pour votre feedback !\n\n" +
+                "Votre message a été transmis. 💙"
             );
-            return;
+
+        } catch (error) {
+            console.error('Erreur feedback:', error);
+            await this.fb.sendTextMessage(senderId,
+                "❌ Erreur lors de l'envoi du feedback."
+            );
         }
-
-        // Créer le signalement
-        await Report.create({
-            reporterId: senderId,
-            reportedUserId: chatInfo.partnerId,
-            chatId: chatInfo.chatId,
-            reason: 'Comportement inapproprié',
-            createdAt: new Date(),
-            status: 'pending'
-        });
-
-        await this.fb.sendTextMessage(senderId, 
-            "✅ Signalement enregistré.\n\n" +
-            "Notre équipe examinera le signalement rapidement.\n" +
-            "La conversation a été terminée.\n\n" +
-            "Tapez /chercher pour trouver un nouveau partenaire."
-        );
-
-        // Terminer la conversation
-        await this.chatManager.endChat(senderId, 'reported');
     }
 
-    // Gérer les postbacks (si nécessaire)
+    // Gérer les postbacks
     async handlePostback(senderId, postback) {
         const payload = postback.payload;
         
