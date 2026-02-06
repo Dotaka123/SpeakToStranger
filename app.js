@@ -1571,11 +1571,11 @@ app.get('/admin/reports-simple', async (req, res) => {
 // ROUTES API POUR LA GESTION DES CHATS
 // ========================================
 
-// Route pour voir les détails d'un chat (version améliorée)
+// Route pour voir les détails d'un chat (version avec collection Message séparée)
 app.get('/admin/chat/:chatId/details', async (req, res) => {
     try {
         const { chatId } = req.params;
-        const { Chat } = require('./models');
+        const { Chat, Message } = require('./models'); // IMPORTANT: Ajouter Message
         
         // Chercher le chat par ID
         const chat = await Chat.findById(chatId).lean();
@@ -1594,12 +1594,27 @@ app.get('/admin/chat/:chatId/details', async (req, res) => {
             });
         }
         
+        // NOUVEAU: Récupérer les messages depuis la collection Message
+        const messages = await Message.find({ chatId: chat._id })
+            .sort({ timestamp: 1 }) // Ordre chronologique
+            .limit(100) // Limiter à 100 messages
+            .lean();
+        
         // Formater les données du chat
         const chatData = {
             id: chat._id,
             participants: chat.participants || [],
-            messageCount: chat.messageCount || 0,
-            messages: chat.messages || [],
+            messageCount: chat.messageCount || messages.length, // Utiliser le vrai count
+            messages: messages.map(msg => ({
+                senderId: msg.senderId,
+                senderPseudo: msg.senderPseudo || 'Anonyme',
+                recipientId: msg.recipientId,
+                content: msg.content || msg.text,
+                text: msg.text || msg.content,
+                type: msg.type || 'text',
+                mediaUrl: msg.mediaUrl,
+                timestamp: msg.timestamp || msg.createdAt
+            })),
             startTime: chat.startedAt || chat.createdAt,
             endTime: chat.endedAt,
             isActive: chat.isActive || false,
