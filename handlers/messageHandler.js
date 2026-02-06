@@ -543,56 +543,152 @@ class MessageHandler {
         }
     }
 
-    // Gérer les signalements
-    async handleReport(senderId) {
-        try {
-            if (!this.chatManager.isInChat(senderId)) {
-                await this.fb.sendTextMessage(senderId,
-                    "❌ Vous devez être en conversation pour signaler."
-                );
-                return;
+// Gérer les signalements
+async handleReport(senderId) {
+    try {
+        // Vérifier si l'utilisateur est en conversation
+        if (!this.chatManager.isInChat(senderId)) {
+            await this.fb.sendTextMessage(senderId,
+                "❌ Vous devez être en conversation pour signaler quelqu'un.\n\n" +
+                "Vous ne pouvez signaler qu'un utilisateur avec qui vous chattez actuellement."
+            );
+            return;
+        }
+
+        const chatInfo = this.chatManager.getChatInfo(senderId);
+        
+        if (!chatInfo || !chatInfo.partnerId) {
+            await this.fb.sendTextMessage(senderId,
+                "❌ Erreur : impossible de récupérer les informations de la conversation."
+            );
+            return;
+        }
+
+        // Récupérer les informations des utilisateurs
+        const reporter = await User.findOne({ facebookId: senderId });
+        const reported = await User.findOne({ facebookId: chatInfo.partnerId });
+        
+        const reporterPseudo = reporter?.pseudo || 'Anonyme';
+        const reportedPseudo = reported?.pseudo || 'Anonyme';
+
+        // Créer le signalement avec tous les champs nécessaires
+        const reportData = {
+            // Champs principaux
+            reporterId: senderId,
+            reportedUserId: chatInfo.partnerId,
+            
+            // Champs de compatibilité (au cas où votre modèle les utilise)
+            reportedBy: senderId,
+            reportedUser: chatInfo.partnerId,
+            
+            // Informations supplémentaires
+            chatId: chatInfo.chatId,
+            reason: 'Comportement inapproprié',
+            status: 'pending',
+            timestamp: new Date(),
+            createdAt: new Date()
+        };
+
+        console.log('📝 Tentative de création du signalement:', reportData);
+
+        // Créer le signalement dans la base de données
+        const report = await Report.create(reportData);
+        
+        console.log(`✅ Signalement créé avec succès: ${report._id}`);
+        console.log(`   De: ${reporterPseudo} (${senderId})`);
+        console.log(`   Contre: ${reportedPseudo} (${chatInfo.partnerId})`);
+
+        // Mettre à jour le compteur de signalements de l'utilisateur signalé
+        await User.findOneAndUpdate(
+            { facebookId: chatInfo.partnerId },
+            { 
+                $inc: { reportCount: 1 },
+                $push: {
+                    reports: {
+                        reportedBy: senderId,
+                        reporterPseudo: reporterPseudo,
+                        reason: 'Comportement inapproprié',
+                        date: new Date()
+                    }
+                }
             }
+        );
 
-            const chatInfo = this.chatManager.getChatInfo(senderId);
-
-            await Report.create({
-                reportedBy: senderId,
-                reportedUser: chatInfo.partnerId,
-                chatId: chatInfo.chatId,
-                reason: 'inappropriate_behavior',
-                timestamp: new Date()
-            });
-
+        // Vérifier si l'utilisateur doit être bloqué (3 signalements ou plus)
+        const reportedUser = await User.findOne({ facebookId: chatInfo.partnerId });
+        
+        if (reportedUser && reportedUser.reportCount >= 3) {
+            console.log(`⚠️ Utilisateur ${reportedPseudo} auto-bloqué (${reportedUser.reportCount} signalements)`);
+            
             await User.findOneAndUpdate(
                 { facebookId: chatInfo.partnerId },
-                { $inc: { reportCount: 1 } }
+                { 
+                    isBlocked: true,
+                    blockedAt: new Date(),
+                    blockReason: `Auto-bloqué : ${reportedUser.reportCount} signalements`
+                }
             );
-
-            const reportedUser = await User.findOne({ facebookId: chatInfo.partnerId });
-            if (reportedUser && reportedUser.reportCount >= 3) {
-                await User.findOneAndUpdate(
-                    { facebookId: chatInfo.partnerId },
-                    { isBlocked: true }
-                );
-            }
-
-            await this.chatManager.endChat(senderId, 'reported');
-
-            await this.fb.sendTextMessage(senderId,
-                "✅ Signalement enregistré.\n\n" +
-                "Merci de maintenir un environnement sûr.\n\n" +
-                "Tapez /chercher pour un nouveau partenaire."
-            );
-
-            console.log(`⚠️ Signalement: ${senderId} → ${chatInfo.partnerId}`);
-
-        } catch (error) {
-            console.error('Erreur signalement:', error);
-            await this.fb.sendTextMessage(senderId,
-                "❌ Erreur lors du signalement."
+            
+            // Notifier l'utilisateur bloqué
+            await this.fb.sendTextMessage(chatInfo.partnerId,
+                "🚫 COMPTE SUSPENDU\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "Votre compte a été suspendu suite à plusieurs signalements.\n\n" +
+                "Cette décision est définitive."
             );
         }
+
+        // Terminer la conversation
+        await this.chatManager.endChat(senderId, 'reported');
+
+        // Message de confirmation pour le rapporteur
+        await this.fb.sendTextMessage(senderId,
+            "✅ SIGNALEMENT ENREGISTRÉ\n" +
+            "━━━━━━━━━━━━━━━━━━\n\n" +
+            "Merci d'avoir signalé ce comportement.\n" +
+            "Notre équipe va examiner cette conversation.\n\n" +
+            "La conversation a été terminée pour votre sécurité.\n\n" +
+            "Commandes disponibles :\n" +
+            "/chercher - Trouver un nouveau partenaire\n" +
+            "/help - Afficher l'aide"
+        );
+
+        // Message neutre pour la personne signalée
+        await this.fb.sendTextMessage(chatInfo.partnerId,
+            "🔚 Conversation terminée.\n" +
+            "━━━━━━━━━━━━━━━━━━\n\n" +
+            "Votre partenaire a quitté la conversation.\n\n" +
+            "Tapez /chercher pour trouver un nouveau partenaire."
+        );
+
+        // Log pour l'admin
+        console.log(`⚠️ SIGNALEMENT:`);
+        console.log(`   • Rapporteur: ${reporterPseudo} (${senderId})`);
+        console.log(`   • Signalé: ${reportedPseudo} (${chatInfo.partnerId})`);
+        console.log(`   • Chat ID: ${chatInfo.chatId}`);
+        console.log(`   • Nombre de signalements du signalé: ${reportedUser?.reportCount || 1}`);
+
+    } catch (error) {
+        console.error('❌ Erreur complète signalement:', error);
+        console.error('Stack:', error.stack);
+        
+        // Message d'erreur pour l'utilisateur
+        await this.fb.sendTextMessage(senderId,
+            "❌ Une erreur s'est produite lors du signalement.\n\n" +
+            "La conversation va être terminée par sécurité.\n\n" +
+            "Si le problème persiste, contactez le support."
+        );
+        
+        // Essayer quand même de terminer la conversation
+        try {
+            if (this.chatManager.isInChat(senderId)) {
+                await this.chatManager.endChat(senderId, 'error');
+            }
+        } catch (endError) {
+            console.error('Erreur lors de la fin de conversation:', endError);
+        }
     }
+}
 
    // Dans messageHandler.js
 async handleFeedback(senderId, feedbackText) {
