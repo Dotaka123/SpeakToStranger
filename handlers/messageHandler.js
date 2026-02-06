@@ -221,59 +221,87 @@ async cleanOldMessages(daysToKeep = 30) {
 }
 
     // Gérer les commandes
-    async handleCommand(senderId, command) {
-        const cmd = command.toLowerCase().trim();
-
-        switch(cmd) {
+// Méthode pour gérer les commandes
+async handleCommand(senderId, messageText) {
+    try {
+        // IMPORTANT : Définir parts ici !
+        const parts = messageText.toLowerCase().split(' ');
+        const command = parts[0];
+        
+        console.log(`📝 Commande reçue: ${command} de ${senderId}`);
+        
+        switch(command) {
             case '/start':
-            case '/menu':
+            case '/help':
                 await this.showHelp(senderId);
                 break;
-
+                
             case '/chercher':
             case '/search':
-            case '/find':
-                await this.startSearch(senderId);
+            case '/nouveau':
+            case '/new':
+                await this.chatManager.addToQueue(senderId);
                 break;
-
-            case '/stop':
-            case '/quit':
-            case '/leave':
-                await this.stopChat(senderId);
-                break;
-
-            case '/pseudo':
-            await this.changePseudo(senderId, parts.slice(1).join(' '));
-            break;
-
-            case '/stats':
-            case '/profil':
-                await this.showStats(senderId);
-                break;
-
-            case '/help':
-            case '/aide':
-            case '/?':
-                await this.showHelp(senderId);
-                break;
-
-            case '/report':
-            case '/signaler':
-                await this.reportUser(senderId);
-                break;
-
-            default:
-                // Si c'est une réponse à une demande de pseudo
-                if (await this.checkIfWaitingForPseudo(senderId, cmd.substring(1))) {
-                    return;
-                }
                 
+            case '/stop':
+            case '/quitter':
+            case '/leave':
+                await this.handleStop(senderId);
+                break;
+                
+            case '/pseudo':
+                // Récupérer le nouveau pseudo (tout après /pseudo)
+                const newPseudo = messageText.slice(7).trim(); // Enlever '/pseudo '
+                await this.changePseudo(senderId, newPseudo);
+                break;
+                
+            case '/profil':
+            case '/profile':
+                await this.showProfile(senderId);
+                break;
+                
+            case '/stats':
+                await this.showUserStats(senderId);
+                break;
+                
+            case '/infos':
+            case '/info':
+                await this.showBotStats(senderId);
+                break;
+                
+            case '/signaler':
+            case '/report':
+                await this.handleReport(senderId);
+                break;
+                
+            case '/feedback':
+                // Récupérer le feedback (tout après /feedback)
+                const feedback = messageText.slice(9).trim(); // Enlever '/feedback '
+                await this.handleFeedback(senderId, feedback);
+                break;
+                
+            default:
+                // Si la commande n'est pas reconnue
                 await this.fb.sendTextMessage(senderId, 
-                    "❓ Commande inconnue: " + cmd + "\n\n" +
+                    "❌ Commande non reconnue.\n\n" +
                     "Tapez /help pour voir les commandes disponibles."
                 );
+                break;
         }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('Erreur traitement commande:', error);
+        
+        await this.fb.sendTextMessage(senderId, 
+            "❌ Une erreur s'est produite.\n\n" +
+            "Veuillez réessayer ou tapez /help pour l'aide."
+        );
+        
+        return false;
     }
+}
 
     // Message de bienvenue
     async sendWelcomeMessage(senderId) {
