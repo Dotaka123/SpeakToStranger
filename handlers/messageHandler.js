@@ -25,20 +25,57 @@ class MessageHandler {
     }
 
     // Gérer les messages entrants
-    async handleMessage(senderId, message) {
-        try {
-            // Marquer comme vu
-            await this.fb.markSeen(senderId);
+// handlers/messageHandler.js - Version corrigée
+async handleMessage(senderId, message) {
+    try {
+        // Marquer comme vu
+        await this.fb.markSeen(senderId);
+        
+        // Vérifier/récupérer l'utilisateur
+        let user = await User.findOne({ facebookId: senderId });
+        
+        if (!user) {
+            // Nouvel utilisateur
+            user = await User.create({
+                facebookId: senderId,
+                createdAt: new Date(),
+                lastActivity: new Date(),
+                status: 'online',
+                isBlocked: false // Explicitement false pour les nouveaux
+            });
             
-            // Vérifier/créer l'utilisateur
-            let user = await User.findOne({ facebookId: senderId });
-            if (!user) {
-                user = await User.create({
-                    facebookId: senderId,
-                    createdAt: new Date(),
-                    lastActivity: new Date(),
-                    status: 'online'
-                });
+            await this.sendWelcomeMessage(senderId);
+            return;
+        }
+
+        // VÉRIFICATION DU BLOCAGE EN PREMIER
+        if (user.isBlocked === true) {
+            console.log(`🚫 Utilisateur bloqué tenté d'accès: ${senderId}`);
+            
+            // Message de blocage
+            await this.fb.sendTextMessage(senderId, 
+                "🚫 COMPTE SUSPENDU\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "Votre compte a été suspendu pour violation des règles.\n\n" +
+                `Raison: ${user.blockReason || 'Violation des conditions d\'utilisation'}\n\n` +
+                "Cette décision est définitive.\n\n" +
+                "Si vous pensez qu'il s'agit d'une erreur, contactez le support."
+            );
+            
+            // NE PAS continuer le traitement
+            return;
+        }
+
+        // Mettre à jour l'activité SEULEMENT si pas bloqué
+        await User.findOneAndUpdate(
+            { facebookId: senderId },
+            { 
+                lastActivity: new Date(),
+                status: 'online'
+            }
+        );
+
+        // ... reste du code pour les utilisateurs non bloqués ...
                 
                 // Premier message de bienvenue
                 await this.sendWelcomeMessage(senderId);
