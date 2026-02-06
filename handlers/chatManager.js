@@ -207,19 +207,23 @@ class ChatManager {
         }
     }
 
-    async handleMessage(senderId, recipientId, message) {
+async handleMessage(senderId, message) {
     try {
-        const chat = await this.Chat.findOne({
-            $or: [
-                { userId1: senderId, userId2: recipientId },
-                { userId1: recipientId, userId2: senderId }
-            ],
-            isActive: true
-        });
+        // Récupérer les infos du chat depuis la map active
+        const chatInfo = this.activeChats.get(senderId);
+        if (!chatInfo) {
+            return false;
+        }
 
+        // Récupérer le chat depuis la base de données
+        const chat = await Chat.findById(chatInfo.chatId);
         if (!chat) {
             return false;
         }
+
+        // Récupérer le pseudo de l'expéditeur
+        const senderInfo = chat.participants.find(p => p.userId === senderId);
+        const senderPseudo = senderInfo?.pseudo || 'Anonyme';
 
         // Incrémenter le compteur de messages
         chat.messageCount = (chat.messageCount || 0) + 1;
@@ -230,20 +234,18 @@ class ChatManager {
             chat.messages = [];
         }
         
-        // AJOUTER : Stocker le message dans le tableau
+        // Stocker le message dans le tableau
         chat.messages.push({
             senderId: senderId,
-            senderPseudo: senderId === chat.userId1 ? 
-                (chat.user1?.pseudo || 'Utilisateur 1') : 
-                (chat.user2?.pseudo || 'Utilisateur 2'),
-            recipientId: recipientId,
+            senderPseudo: senderPseudo,
+            recipientId: chatInfo.partnerId,
             content: message,
-            text: message,  // Pour compatibilité
+            text: message,
             timestamp: new Date(),
             type: 'text'
         });
         
-        // Limiter à 100 derniers messages pour éviter que ça devienne trop gros
+        // Limiter à 100 derniers messages
         if (chat.messages.length > 100) {
             chat.messages = chat.messages.slice(-100);
         }
@@ -260,70 +262,74 @@ class ChatManager {
     }
 }
 
-    // Transférer un message entre partenaires
-    async relayMessage(senderId, message) {
-        const chat = this.activeChats.get(senderId);
-        if (!chat) {
-            await this.fb.sendTextMessage(senderId, 
-                "❌ Vous n'êtes pas en conversation.\n\n" +
-                "Tapez /chercher pour trouver un partenaire."
-            );
-            return false;
-        }
-
-        try {
-            // Mettre à jour les stats
-            await Chat.findByIdAndUpdate(chat.chatId, {
-                $inc: { messageCount: 1 },
-                lastActivity: new Date()
-            });
-
-            await User.findOneAndUpdate(
-                { facebookId: senderId },
-                { $inc: { totalMessages: 1 } }
-            );
-
-            // Transférer le message
-            if (message.text) {
-                // Message texte simple
-                const relayedMessage = `💬 ${chat.partnerPseudo}: ${message.text}`;
-                await this.fb.sendTextMessage(chat.partnerId, relayedMessage);
-            } else if (message.attachments) {
-                // Gérer les pièces jointes
-                const attachmentType = message.attachments[0].type;
-                let notification = '';
-                
-                switch(attachmentType) {
-                    case 'image':
-                        notification = `📷 ${chat.partnerPseudo} a envoyé une image`;
-                        break;
-                    case 'video':
-                        notification = `🎥 ${chat.partnerPseudo} a envoyé une vidéo`;
-                        break;
-                    case 'audio':
-                        notification = `🎵 ${chat.partnerPseudo} a envoyé un audio`;
-                        break;
-                    case 'file':
-                        notification = `📎 ${chat.partnerPseudo} a envoyé un fichier`;
-                        break;
-                    default:
-                        notification = `📎 ${chat.partnerPseudo} a envoyé une pièce jointe`;
-                }
-                
-                await this.fb.sendTextMessage(chat.partnerId, notification);
-            } else if (message.sticker_id) {
-                await this.fb.sendTextMessage(chat.partnerId, 
-                    `😊 ${chat.partnerPseudo} a envoyé un sticker`
-                );
-            }
-
-            return true;
-
-        } catch (error) {
-            console.error('Erreur transfert message:', error);
-            return false;
-        }
+// Transférer un message entre partenaires
+async relayMessage(senderId, message) {
+    const chat = this.activeChats.get(senderId);
+    if (!chat) {
+        await this.fb.sendTextMessage(senderId, 
+            "❌ Vous n'êtes pas en conversation.\n\n" +
+            "Tapez /chercher pour trouver un partenaire."
+        );
+        return false;
     }
+
+    try {
+        // Stocker le message dans l'historique
+        if (message.text) {
+            await this.handleMessage(senderId, message.text);
+        }
+        
+        // Mettre à jour les stats utilisateur
+        await User.findOneAndUpdate(
+            { facebookId: senderId },
+            { $inc: { totalMessages: 1 } }
+        );
+
+        // Transférer le message
+        if (message.text) {
+            // Message texte simple
+            const relayedMessage = `💬 ${chat.partnerPseudo}: ${message.text}`;
+            await this.fb.sendTextMessage(chat.partnerId, relayedMessage);
+        } else if (message.attachments) {
+            // Gérer les pièces jointes
+            const attachmentType = message.attachments[0].type;
+            let notification = '';
+            
+            switch(attachmentType) {
+                case 'image':
+                    notification = `📷 ${chat.partnerPseudo} a envoyé une image`;
+                    break;
+                case 'video':
+                    notification = `🎥 ${chat.partnerPseudo} a envoyé une vidéo`;
+                    break;
+                case 'audio':
+                    notification = `🎵 ${chat.partnerPseudo} a envoyé un audio`;
+                    break;
+                case 'file':
+                    notification = `📎 ${chat.partnerPseudo} a envoyé un fichier`;
+                    break;
+                default:
+                    notification = `📎 ${chat.partnerPseudo} a envoyé une pièce jointe`;
+            }
+            
+            // Stocker aussi la notification de pièce jointe
+            await this.handleMessage(senderId, `[${attachmentType}]`);
+            
+            await this.fb.sendTextMessage(chat.partnerId, notification);
+        } else if (message.sticker_id) {
+            await this.handleMessage(senderId, '[sticker]');
+            await this.fb.sendTextMessage(chat.partnerId, 
+                `😊 ${chat.partnerPseudo} a envoyé un sticker`
+            );
+        }
+
+        return true;
+
+    } catch (error) {
+        console.error('Erreur transfert message:', error);
+        return false;
+    }
+}
 
     // Terminer une conversation
     async endChat(userId, reason = 'user_request') {
