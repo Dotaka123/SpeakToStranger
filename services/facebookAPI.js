@@ -8,6 +8,108 @@ class FacebookAPI {
         this.API_URL = 'https://graph.facebook.com/v18.0';
     }
 
+
+    // services/facebookAPI.js
+
+// Envoyer une image
+async sendImageMessage(recipientId, imageUrl) {
+    const messageData = {
+        recipient: { id: recipientId },
+        message: {
+            attachment: {
+                type: 'image',
+                payload: {
+                    url: imageUrl,
+                    is_reusable: true
+                }
+            }
+        }
+    };
+    return this.callSendAPI(messageData);
+}
+
+// Envoyer une vidéo
+async sendVideoMessage(recipientId, videoUrl) {
+    const messageData = {
+        recipient: { id: recipientId },
+        message: {
+            attachment: {
+                type: 'video',
+                payload: {
+                    url: videoUrl,
+                    is_reusable: true
+                }
+            }
+        }
+    };
+    return this.callSendAPI(messageData);
+}
+
+// Envoyer un audio
+async sendAudioMessage(recipientId, audioUrl) {
+    const messageData = {
+        recipient: { id: recipientId },
+        message: {
+            attachment: {
+                type: 'audio',
+                payload: {
+                    url: audioUrl,
+                    is_reusable: true
+                }
+            }
+        }
+    };
+    return this.callSendAPI(messageData);
+}
+
+// Envoyer un fichier
+async sendFileMessage(recipientId, fileUrl) {
+    const messageData = {
+        recipient: { id: recipientId },
+        message: {
+            attachment: {
+                type: 'file',
+                payload: {
+                    url: fileUrl,
+                    is_reusable: true
+                }
+            }
+        }
+    };
+    return this.callSendAPI(messageData);
+}
+
+// Envoyer une localisation
+async sendLocationMessage(recipientId, lat, long) {
+    const messageData = {
+        recipient: { id: recipientId },
+        message: {
+            attachment: {
+                type: 'template',
+                payload: {
+                    template_type: 'generic',
+                    elements: [{
+                        title: '📍 Localisation partagée',
+                        subtitle: `Coordonnées: ${lat}, ${long}`,
+                        image_url: `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${long}&zoom=15&size=300x300&markers=${lat},${long}`
+                    }]
+                }
+            }
+        }
+    };
+    return this.callSendAPI(messageData);
+}
+
+// Envoyer un sticker
+async sendStickerMessage(recipientId, stickerId) {
+    const messageData = {
+        recipient: { id: recipientId },
+        message: {
+            sticker_id: stickerId
+        }
+    };
+    return this.callSendAPI(messageData);
+}
     // Envoyer un message texte
     async sendTextMessage(recipientId, text) {
         try {
