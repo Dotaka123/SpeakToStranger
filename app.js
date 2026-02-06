@@ -1730,6 +1730,546 @@ app.get('/admin/dashboard-direct', async (req, res) => {
     }
 });
 
+// Route pour voir les détails d'un utilisateur
+app.get('/admin/user/:userId', async (req, res) => {
+    try {
+        const { User, Chat, Report, Message } = require('./models');
+        const { userId } = req.params;
+        
+        // Récupérer l'utilisateur
+        const user = await User.findOne({ facebookId: userId }).lean();
+        
+        if (!user) {
+            return res.status(404).send(`
+                <h1>Utilisateur non trouvé</h1>
+                <p>L'utilisateur avec l'ID ${userId} n'existe pas.</p>
+                <a href="/admin/users">← Retour à la liste</a>
+            `);
+        }
+        
+        // Statistiques supplémentaires
+        const userChats = await Chat.find({
+            $or: [
+                { 'participants.userId': userId },
+                { userId1: userId },
+                { userId2: userId }
+            ]
+        }).sort({ startedAt: -1 }).limit(10).lean();
+        
+        const userReports = await Report.find({
+            $or: [
+                { reportedBy: userId },
+                { reportedUser: userId }
+            ]
+        }).sort({ timestamp: -1 }).limit(10).lean();
+        
+        const recentMessages = await Message.find({ senderId: userId })
+            .sort({ timestamp: -1 })
+            .limit(20)
+            .lean();
+        
+        // Calculer des statistiques
+        const stats = {
+            totalChats: userChats.length,
+            reportsMade: await Report.countDocuments({ reportedBy: userId }),
+            reportsReceived: await Report.countDocuments({ reportedUser: userId }),
+            messagesLast24h: await Message.countDocuments({
+                senderId: userId,
+                timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+            })
+        };
+        
+        let html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Profil de ${user.pseudo || 'Utilisateur'} - Admin</title>
+            <meta charset="UTF-8">
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
+                }
+                
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }
+                
+                .header {
+                    background: white;
+                    border-radius: 15px;
+                    padding: 30px;
+                    margin-bottom: 25px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+                }
+                
+                .back-btn {
+                    display: inline-block;
+                    padding: 10px 20px;
+                    background: #667eea;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 8px;
+                    margin-bottom: 20px;
+                }
+                
+                .back-btn:hover {
+                    background: #5a67d8;
+                }
+                
+                .user-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }
+                
+                .user-avatar {
+                    width: 80px;
+                    height: 80px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-size: 2rem;
+                    font-weight: bold;
+                }
+                
+                .user-info h1 {
+                    color: #2d3748;
+                    margin-bottom: 5px;
+                }
+                
+                .user-id {
+                    color: #718096;
+                    font-family: monospace;
+                    font-size: 0.9rem;
+                }
+                
+                .status-badge {
+                    display: inline-block;
+                    padding: 6px 12px;
+                    border-radius: 20px;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                    margin-left: 10px;
+                }
+                
+                .status-active { background: #c6f6d5; color: #22543d; }
+                .status-blocked { background: #fed7d7; color: #c53030; }
+                .status-online { background: #bee3f8; color: #2c5282; }
+                .status-offline { background: #e2e8f0; color: #4a5568; }
+                
+                .stats-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 20px;
+                    margin: 30px 0;
+                }
+                
+                .stat-card {
+                    background: #f7fafc;
+                    padding: 20px;
+                    border-radius: 10px;
+                    text-align: center;
+                }
+                
+                .stat-number {
+                    font-size: 2rem;
+                    font-weight: bold;
+                    color: #667eea;
+                    margin-bottom: 5px;
+                }
+                
+                .stat-label {
+                    color: #718096;
+                    font-size: 0.9rem;
+                    text-transform: uppercase;
+                }
+                
+                .action-buttons {
+                    display: flex;
+                    gap: 10px;
+                    margin: 30px 0;
+                }
+                
+                .action-btn {
+                    padding: 12px 24px;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    transition: all 0.2s;
+                }
+                
+                .btn-message { background: #4299e1; color: white; }
+                .btn-warn { background: #ed8936; color: white; }
+                .btn-block { background: #f56565; color: white; }
+                .btn-unblock { background: #48bb78; color: white; }
+                
+                .section {
+                    background: white;
+                    border-radius: 15px;
+                    padding: 25px;
+                    margin-bottom: 20px;
+                    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+                }
+                
+                .section h2 {
+                    color: #2d3748;
+                    margin-bottom: 20px;
+                    padding-bottom: 10px;
+                    border-bottom: 2px solid #e2e8f0;
+                }
+                
+                .info-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                    gap: 20px;
+                }
+                
+                .info-item {
+                    padding: 15px;
+                    background: #f7fafc;
+                    border-radius: 8px;
+                }
+                
+                .info-label {
+                    color: #718096;
+                    font-size: 0.85rem;
+                    text-transform: uppercase;
+                    margin-bottom: 5px;
+                }
+                
+                .info-value {
+                    color: #2d3748;
+                    font-size: 1.1rem;
+                    font-weight: 600;
+                }
+                
+                .table {
+                    width: 100%;
+                    border-collapse: collapse;
+                }
+                
+                .table th {
+                    background: #f7fafc;
+                    padding: 12px;
+                    text-align: left;
+                    color: #4a5568;
+                    font-weight: 600;
+                    border-bottom: 2px solid #e2e8f0;
+                }
+                
+                .table td {
+                    padding: 12px;
+                    border-bottom: 1px solid #e2e8f0;
+                }
+                
+                .message-preview {
+                    background: #f7fafc;
+                    padding: 10px;
+                    border-radius: 5px;
+                    margin: 5px 0;
+                    border-left: 3px solid #667eea;
+                }
+                
+                .message-time {
+                    color: #718096;
+                    font-size: 0.85rem;
+                }
+                
+                .message-content {
+                    color: #2d3748;
+                    margin-top: 5px;
+                }
+                
+                .no-data {
+                    text-align: center;
+                    padding: 40px;
+                    color: #a0aec0;
+                    font-style: italic;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <a href="/admin/users" class="back-btn">← Retour aux utilisateurs</a>
+                    
+                    <div class="user-header">
+                        <div class="user-avatar">
+                            ${user.pseudo ? user.pseudo[0].toUpperCase() : '?'}
+                        </div>
+                        <div class="user-info">
+                            <h1>
+                                ${user.pseudo || 'Utilisateur'}
+                                <span class="status-badge ${user.isBlocked ? 'status-blocked' : user.status === 'online' ? 'status-online' : 'status-offline'}">
+                                    ${user.isBlocked ? 'Bloqué' : user.status || 'Offline'}
+                                </span>
+                            </h1>
+                            <div class="user-id">ID: ${user.facebookId}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="action-buttons">
+                        <button class="action-btn btn-message" onclick="sendMessage('${user.facebookId}')">
+                            💬 Envoyer un message
+                        </button>
+                        ${user.isBlocked ? `
+                            <button class="action-btn btn-unblock" onclick="unblockUser('${user.facebookId}')">
+                                ✅ Débloquer
+                            </button>
+                        ` : `
+                            <button class="action-btn btn-warn" onclick="warnUser('${user.facebookId}')">
+                                ⚠️ Avertir
+                            </button>
+                            <button class="action-btn btn-block" onclick="blockUser('${user.facebookId}')">
+                                🚫 Bloquer
+                            </button>
+                        `}
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number">${user.totalConversations || 0}</div>
+                            <div class="stat-label">Conversations</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${user.totalMessages || 0}</div>
+                            <div class="stat-label">Messages envoyés</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.reportsMade}</div>
+                            <div class="stat-label">Signalements faits</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${stats.reportsReceived}</div>
+                            <div class="stat-label">Fois signalé</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">⭐ ${user.rating?.toFixed(1) || '5.0'}</div>
+                            <div class="stat-label">Note moyenne</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${user.warningCount || 0}</div>
+                            <div class="stat-label">Avertissements</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>📋 Informations détaillées</h2>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-label">Date d'inscription</div>
+                            <div class="info-value">${user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : 'Inconnue'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Dernière activité</div>
+                            <div class="info-value">${user.lastActivity ? new Date(user.lastActivity).toLocaleString('fr-FR') : 'Jamais'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Messages (24h)</div>
+                            <div class="info-value">${stats.messagesLast24h}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Dernier changement pseudo</div>
+                            <div class="info-value">${user.lastPseudoChange ? new Date(user.lastPseudoChange).toLocaleDateString('fr-FR') : 'Jamais'}</div>
+                        </div>
+                        ${user.isBlocked ? `
+                            <div class="info-item">
+                                <div class="info-label">Date de blocage</div>
+                                <div class="info-value">${user.blockedAt ? new Date(user.blockedAt).toLocaleDateString('fr-FR') : 'Inconnue'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Raison du blocage</div>
+                                <div class="info-value">${user.blockReason || 'Non spécifiée'}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>💬 Conversations récentes</h2>
+                    ${userChats.length > 0 ? `
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Partenaire</th>
+                                    <th>Messages</th>
+                                    <th>Durée</th>
+                                    <th>Statut</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${userChats.map(chat => {
+                                    const partner = chat.participants?.find(p => p.userId !== userId);
+                                    const duration = chat.endedAt ? 
+                                        Math.round((new Date(chat.endedAt) - new Date(chat.startedAt)) / 60000) : 
+                                        'En cours';
+                                    
+                                    return `
+                                        <tr>
+                                            <td>${new Date(chat.startedAt).toLocaleDateString('fr-FR')}</td>
+                                            <td>${partner?.pseudo || 'Inconnu'}</td>
+                                            <td>${chat.messageCount || 0}</td>
+                                            <td>${duration} ${duration !== 'En cours' ? 'min' : ''}</td>
+                                            <td>${chat.status || 'ended'}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    ` : '<div class="no-data">Aucune conversation récente</div>'}
+                </div>
+                
+                <div class="section">
+                    <h2>📝 Derniers messages</h2>
+                    ${recentMessages.length > 0 ? 
+                        recentMessages.slice(0, 10).map(msg => `
+                            <div class="message-preview">
+                                <div class="message-time">
+                                    ${new Date(msg.timestamp).toLocaleString('fr-FR')}
+                                    ${msg.type !== 'text' ? `<span style="margin-left: 10px;">📎 ${msg.type}</span>` : ''}
+                                </div>
+                                <div class="message-content">
+                                    ${msg.content ? msg.content.substring(0, 150) : '[Message vide]'}
+                                    ${msg.content && msg.content.length > 150 ? '...' : ''}
+                                </div>
+                            </div>
+                        `).join('') : 
+                        '<div class="no-data">Aucun message récent</div>'
+                    }
+                </div>
+                
+                <div class="section">
+                    <h2>⚠️ Signalements</h2>
+                    ${userReports.length > 0 ? `
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Utilisateur impliqué</th>
+                                    <th>Raison</th>
+                                    <th>Statut</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${userReports.map(report => `
+                                    <tr>
+                                        <td>${new Date(report.timestamp || report.createdAt).toLocaleDateString('fr-FR')}</td>
+                                        <td>${report.reportedBy === userId ? '📤 Fait' : '📥 Reçu'}</td>
+                                        <td>${report.reportedBy === userId ? report.reportedUser : report.reportedBy}</td>
+                                        <td>${report.reason || 'Non spécifiée'}</td>
+                                        <td>${report.status || 'pending'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    ` : '<div class="no-data">Aucun signalement</div>'}
+                </div>
+            </div>
+            
+            <script>
+                async function sendMessage(userId) {
+                    const message = prompt('Entrez le message à envoyer:');
+                    if (!message) return;
+                    
+                    try {
+                        const response = await fetch('/admin/user/' + userId + '/message', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message })
+                        });
+                        const data = await response.json();
+                        alert(data.success ? '✅ Message envoyé!' : '❌ Erreur: ' + data.error);
+                    } catch (error) {
+                        alert('❌ Erreur: ' + error.message);
+                    }
+                }
+                
+                async function warnUser(userId) {
+                    const reason = prompt('Raison de l\\'avertissement:');
+                    if (!reason) return;
+                    
+                    if (confirm('Envoyer un avertissement?')) {
+                        try {
+                            const response = await fetch('/admin/user/' + userId + '/warn', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ reason })
+                            });
+                            const data = await response.json();
+                            alert(data.success ? '✅ Avertissement envoyé!' : '❌ Erreur: ' + data.error);
+                            if (data.success) location.reload();
+                        } catch (error) {
+                            alert('❌ Erreur: ' + error.message);
+                        }
+                    }
+                }
+                
+                async function blockUser(userId) {
+                    const reason = prompt('Raison du blocage:');
+                    if (!reason) return;
+                    
+                    if (confirm('⚠️ Êtes-vous sûr de vouloir bloquer cet utilisateur?')) {
+                        try {
+                            const response = await fetch('/admin/user/' + userId + '/block', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ reason })
+                            });
+                            const data = await response.json();
+                            alert(data.success ? '✅ Utilisateur bloqué!' : '❌ Erreur: ' + data.error);
+                            if (data.success) location.reload();
+                        } catch (error) {
+                            alert('❌ Erreur: ' + error.message);
+                        }
+                    }
+                }
+                
+                async function unblockUser(userId) {
+                    if (confirm('Débloquer cet utilisateur?')) {
+                        try {
+                            const response = await fetch('/admin/user/' + userId + '/unblock', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' }
+                            });
+                            const data = await response.json();
+                            alert(data.success ? '✅ Utilisateur débloqué!' : '❌ Erreur: ' + data.error);
+                            if (data.success) location.reload();
+                        } catch (error) {
+                            alert('❌ Erreur: ' + error.message);
+                        }
+                    }
+                }
+            </script>
+        </body>
+        </html>
+        `;
+        
+        res.send(html);
+        
+    } catch (error) {
+        console.error('Erreur profil utilisateur:', error);
+        res.status(500).send(`
+            <h1>Erreur</h1>
+            <p>${error.message}</p>
+            <a href="/admin/users">← Retour</a>
+        `);
+    }
+});
+
 // ========================================
 // ROUTES SIMPLES POUR LES SIGNALEMENTS
 // ========================================
