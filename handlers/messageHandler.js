@@ -3,70 +3,88 @@ const facebookAPI = require('../services/facebookAPI');
 const { User, Chat, Report } = require('../models');
 
 class MessageHandler {
-    constructor(chatManager) {
+    constructor(chatManager, userManager) {
         this.chatManager = chatManager;
-        this.fb = facebookAPI; // Utiliser directement l'instance exportée, pas new FacebookAPI()
+        this.userManager = userManager;
+        this.fb = facebookAPI;
+    }
+
+    // Gérer les événements Facebook
+    async handleEvent(event) {
+        try {
+            const senderId = event.sender.id;
+            
+            if (event.message) {
+                await this.handleMessage(senderId, event.message);
+            } else if (event.postback) {
+                await this.handlePostback(senderId, event.postback);
+            }
+        } catch (error) {
+            console.error('Erreur traitement événement:', error);
+        }
     }
 
     // Gérer les messages entrants
     async handleMessage(senderId, message) {
         try {
-            // Marquer le message comme vu
+            // Marquer comme vu
             await this.fb.markSeen(senderId);
-
-            // Vérifier si l'utilisateur existe ou le créer
+            
+            // Vérifier/créer l'utilisateur
             let user = await User.findOne({ facebookId: senderId });
             if (!user) {
                 user = await User.create({
                     facebookId: senderId,
                     createdAt: new Date(),
-                    lastActivity: new Date()
+                    lastActivity: new Date(),
+                    status: 'online'
                 });
                 
-                // Message de bienvenue pour les nouveaux utilisateurs
+                // Premier message de bienvenue
                 await this.sendWelcomeMessage(senderId);
                 return;
             }
 
-            // Mettre à jour la dernière activité
+            // Mettre à jour l'activité
             await User.findOneAndUpdate(
                 { facebookId: senderId },
-                { lastActivity: new Date() }
+                { 
+                    lastActivity: new Date(),
+                    status: 'online'
+                }
             );
 
-            // Vérifier si l'utilisateur est bloqué
+            // Vérifier si bloqué
             if (user.isBlocked) {
                 await this.fb.sendTextMessage(senderId, 
-                    "🚫 Votre compte a été suspendu.\n\nSi vous pensez qu'il s'agit d'une erreur, contactez le support."
+                    "🚫 Votre compte a été suspendu.\n\n" +
+                    "Si vous pensez qu'il s'agit d'une erreur, contactez le support."
                 );
                 return;
             }
 
+            const text = message.text?.toLowerCase().trim();
+
             // Traiter les commandes
-            if (message.text && message.text.startsWith('/')) {
-                await this.handleCommand(senderId, message.text);
+            if (text?.startsWith('/')) {
+                await this.handleCommand(senderId, text);
                 return;
             }
 
-            // Traiter les quick replies
-            if (message.quick_reply) {
-                await this.handleQuickReply(senderId, message.quick_reply.payload);
-                return;
-            }
-
-            // Si l'utilisateur est en conversation, transférer le message
+            // Si en conversation, transférer le message
             if (this.chatManager.isInChat(senderId)) {
                 await this.chatManager.relayMessage(senderId, message);
                 return;
             }
 
-            // Sinon, afficher le menu principal
-            await this.showMainMenu(senderId);
+            // Sinon, afficher l'aide
+            await this.showHelp(senderId);
 
         } catch (error) {
             console.error('Erreur traitement message:', error);
             await this.fb.sendTextMessage(senderId, 
-                "❌ Une erreur s'est produite. Veuillez réessayer plus tard."
+                "❌ Une erreur s'est produite. Veuillez réessayer.\n\n" +
+                "Tapez /help pour voir les commandes disponibles."
             );
         }
     }
@@ -78,29 +96,34 @@ class MessageHandler {
         switch(cmd) {
             case '/start':
             case '/menu':
-                await this.showMainMenu(senderId);
+                await this.showHelp(senderId);
                 break;
 
             case '/chercher':
             case '/search':
+            case '/find':
                 await this.startSearch(senderId);
                 break;
 
             case '/stop':
             case '/quit':
+            case '/leave':
                 await this.stopChat(senderId);
                 break;
 
             case '/pseudo':
-                await this.changePseudo(senderId);
+            case '/name':
+                await this.askForPseudo(senderId);
                 break;
 
             case '/stats':
+            case '/profil':
                 await this.showStats(senderId);
                 break;
 
             case '/help':
             case '/aide':
+            case '/?':
                 await this.showHelp(senderId);
                 break;
 
@@ -110,223 +133,172 @@ class MessageHandler {
                 break;
 
             default:
-                await this.fb.sendTextMessage(senderId, 
-                    "❓ Commande inconnue.\n\nTapez /help pour voir les commandes disponibles."
-                );
-        }
-    }
-
-    // Gérer les quick replies
-    async handleQuickReply(senderId, payload) {
-        switch(payload) {
-            case 'CHERCHER':
-                await this.startSearch(senderId);
-                break;
-
-            case 'STOP':
-                await this.stopChat(senderId);
-                break;
-
-            case 'PSEUDO':
-                await this.changePseudo(senderId);
-                break;
-
-            case 'STATS':
-                await this.showStats(senderId);
-                break;
-
-            case 'HELP':
-                await this.showHelp(senderId);
-                break;
-
-            case 'REPORT':
-                await this.reportUser(senderId);
-                break;
-
-            default:
-                // Gérer les payloads personnalisés
-                if (payload.startsWith('INTERESTS_')) {
-                    await this.handleInterests(senderId, payload);
+                // Si c'est une réponse à une demande de pseudo
+                if (await this.checkIfWaitingForPseudo(senderId, cmd.substring(1))) {
+                    return;
                 }
+                
+                await this.fb.sendTextMessage(senderId, 
+                    "❓ Commande inconnue: " + cmd + "\n\n" +
+                    "Tapez /help pour voir les commandes disponibles."
+                );
         }
     }
 
     // Message de bienvenue
     async sendWelcomeMessage(senderId) {
-        const welcomeMessage = `🎭 Bienvenue sur SpeakToStranger !\n\n` +
-            `Je suis votre assistant pour vous connecter avec des inconnus du monde entier.\n\n` +
-            `🌟 Comment ça marche ?\n` +
-            `1. Choisissez un pseudo (optionnel)\n` +
-            `2. Lancez une recherche\n` +
-            `3. Discutez avec un inconnu\n` +
-            `4. Restez respectueux !\n\n` +
-            `Que souhaitez-vous faire ?`;
+        const welcomeMessage = 
+            "🎭 Bienvenue sur SpeakToStranger !\n\n" +
+            "Je suis votre assistant pour vous connecter avec des inconnus.\n\n" +
+            "📝 COMMANDES DISPONIBLES :\n" +
+            "━━━━━━━━━━━━━━━━━━\n" +
+            "/chercher - 🔍 Trouver un partenaire\n" +
+            "/stop - 🛑 Quitter la conversation\n" +
+            "/pseudo - ✏️ Changer votre pseudo\n" +
+            "/stats - 📊 Voir vos statistiques\n" +
+            "/help - ❓ Afficher cette aide\n\n" +
+            "🎯 Commencez par taper /chercher pour trouver quelqu'un !";
 
-        const quickReplies = [
-            {
-                content_type: 'text',
-                title: '🔍 Chercher quelqu\'un',
-                payload: 'CHERCHER'
-            },
-            {
-                content_type: 'text',
-                title: '✏️ Choisir un pseudo',
-                payload: 'PSEUDO'
-            },
-            {
-                content_type: 'text',
-                title: '❓ Aide',
-                payload: 'HELP'
-            }
-        ];
-
-        await this.fb.sendQuickReply(senderId, welcomeMessage, quickReplies);
+        await this.fb.sendTextMessage(senderId, welcomeMessage);
     }
 
-    // Menu principal
-    async showMainMenu(senderId) {
+    // Afficher l'aide
+    async showHelp(senderId) {
         const user = await User.findOne({ facebookId: senderId });
         const pseudo = user?.pseudo || 'Anonyme';
+        
+        const helpMessage = 
+            `👋 Bonjour ${pseudo} !\n\n` +
+            "📝 COMMANDES DISPONIBLES :\n" +
+            "━━━━━━━━━━━━━━━━━━\n" +
+            "/chercher - 🔍 Trouver un partenaire\n" +
+            "/stop - 🛑 Quitter la conversation\n" +
+            "/pseudo - ✏️ Changer votre pseudo\n" +
+            "/stats - 📊 Voir vos statistiques\n" +
+            "/signaler - 🚨 Signaler un utilisateur\n" +
+            "/help - ❓ Afficher cette aide\n\n" +
+            "💡 CONSEILS :\n" +
+            "• Restez respectueux\n" +
+            "• Ne partagez pas d'infos personnelles\n" +
+            "• Amusez-vous ! 🎉\n\n" +
+            "🎯 Tapez /chercher pour commencer !";
 
-        const menuMessage = `👋 Bonjour ${pseudo} !\n\nQue souhaitez-vous faire ?`;
-
-        const quickReplies = [
-            {
-                content_type: 'text',
-                title: '🔍 Chercher quelqu\'un',
-                payload: 'CHERCHER'
-            },
-            {
-                content_type: 'text',
-                title: '✏️ Changer de pseudo',
-                payload: 'PSEUDO'
-            },
-            {
-                content_type: 'text',
-                title: '📊 Mes statistiques',
-                payload: 'STATS'
-            },
-            {
-                content_type: 'text',
-                title: '❓ Aide',
-                payload: 'HELP'
-            }
-        ];
-
-        await this.fb.sendQuickReply(senderId, menuMessage, quickReplies);
+        await this.fb.sendTextMessage(senderId, helpMessage);
     }
 
     // Commencer une recherche
     async startSearch(senderId) {
-        // Vérifier si déjà en recherche ou en conversation
+        // Vérifier si déjà en conversation
         if (this.chatManager.isInChat(senderId)) {
             await this.fb.sendTextMessage(senderId, 
-                "💬 Vous êtes déjà en conversation !\n\nTapez /stop pour la terminer."
+                "💬 Vous êtes déjà en conversation !\n\n" +
+                "Tapez /stop pour quitter la conversation actuelle."
             );
             return;
         }
 
-        // Demander les préférences (optionnel)
-        await this.askInterests(senderId);
-    }
-
-    // Demander les centres d'intérêt
-    async askInterests(senderId) {
-        const message = "🎯 Choisissez vos centres d'intérêt (optionnel) :";
-        
-        const quickReplies = [
-            {
-                content_type: 'text',
-                title: '🎮 Gaming',
-                payload: 'INTERESTS_gaming'
-            },
-            {
-                content_type: 'text',
-                title: '🎵 Musique',
-                payload: 'INTERESTS_music'
-            },
-            {
-                content_type: 'text',
-                title: '🎬 Films/Séries',
-                payload: 'INTERESTS_movies'
-            },
-            {
-                content_type: 'text',
-                title: '⚽ Sport',
-                payload: 'INTERESTS_sports'
-            },
-            {
-                content_type: 'text',
-                title: '📚 Lecture',
-                payload: 'INTERESTS_reading'
-            },
-            {
-                content_type: 'text',
-                title: '🎨 Art',
-                payload: 'INTERESTS_art'
-            },
-            {
-                content_type: 'text',
-                title: '💻 Tech',
-                payload: 'INTERESTS_tech'
-            },
-            {
-                content_type: 'text',
-                title: '🌍 Voyages',
-                payload: 'INTERESTS_travel'
-            },
-            {
-                content_type: 'text',
-                title: '⏭️ Passer',
-                payload: 'INTERESTS_skip'
-            }
-        ];
-
-        await this.fb.sendQuickReply(senderId, message, quickReplies);
-    }
-
-    // Gérer la sélection des intérêts
-    async handleInterests(senderId, payload) {
-        const interest = payload.replace('INTERESTS_', '');
-        
-        if (interest === 'skip') {
-            // Lancer la recherche sans préférences
-            await this.chatManager.addToQueue(senderId);
-        } else {
-            // Sauvegarder l'intérêt et lancer la recherche
-            await User.findOneAndUpdate(
-                { facebookId: senderId },
-                { $addToSet: { interests: interest } }
+        // Vérifier si déjà en recherche
+        if (this.chatManager.isInQueue(senderId)) {
+            await this.fb.sendTextMessage(senderId, 
+                "🔄 Vous êtes déjà en recherche...\n\n" +
+                "Patience, nous cherchons quelqu'un pour vous ! 🔍"
             );
-            
-            await this.chatManager.addToQueue(senderId, { interests: [interest] });
+            return;
         }
+
+        // Ajouter à la file d'attente
+        await this.chatManager.addToQueue(senderId);
     }
 
     // Arrêter une conversation
     async stopChat(senderId) {
         if (!this.chatManager.isInChat(senderId)) {
-            await this.fb.sendTextMessage(senderId, 
-                "❌ Vous n'êtes pas en conversation actuellement."
-            );
+            // Vérifier si en file d'attente
+            if (this.chatManager.isInQueue(senderId)) {
+                await this.chatManager.removeFromQueue(senderId);
+                await this.fb.sendTextMessage(senderId, 
+                    "🔚 Recherche annulée.\n\n" +
+                    "Tapez /chercher pour relancer une recherche."
+                );
+            } else {
+                await this.fb.sendTextMessage(senderId, 
+                    "❌ Vous n'êtes pas en conversation.\n\n" +
+                    "Tapez /chercher pour trouver quelqu'un."
+                );
+            }
             return;
         }
 
         await this.chatManager.endChat(senderId);
     }
 
-    // Changer de pseudo
-    async changePseudo(senderId) {
-        await this.fb.sendTextMessage(senderId, 
-            "✏️ Entrez votre nouveau pseudo :\n\n" +
-            "⚠️ Évitez les pseudos offensants ou personnels."
-        );
-        
-        // Stocker l'état en attente du pseudo
+    // Demander le pseudo
+    async askForPseudo(senderId) {
         await User.findOneAndUpdate(
             { facebookId: senderId },
             { waitingForPseudo: true }
         );
+        
+        await this.fb.sendTextMessage(senderId, 
+            "✏️ Entrez votre nouveau pseudo :\n\n" +
+            "⚠️ Choisissez un pseudo respectueux\n" +
+            "(max 20 caractères)"
+        );
+    }
+
+    // Vérifier si on attend un pseudo
+    async checkIfWaitingForPseudo(senderId, text) {
+        const user = await User.findOne({ facebookId: senderId });
+        
+        if (!user?.waitingForPseudo) {
+            return false;
+        }
+
+        // Valider le pseudo
+        const newPseudo = text.trim();
+        
+        if (newPseudo.length === 0) {
+            await this.fb.sendTextMessage(senderId, 
+                "❌ Le pseudo ne peut pas être vide.\n\n" +
+                "Réessayez ou tapez /help pour annuler."
+            );
+            return true;
+        }
+
+        if (newPseudo.length > 20) {
+            await this.fb.sendTextMessage(senderId, 
+                "❌ Le pseudo est trop long (max 20 caractères).\n\n" +
+                "Réessayez avec un pseudo plus court."
+            );
+            return true;
+        }
+
+        // Filtrer les mots inappropriés (liste basique)
+        const inappropriateWords = ['admin', 'bot', 'fuck', 'shit', 'pute', 'salope'];
+        if (inappropriateWords.some(word => newPseudo.toLowerCase().includes(word))) {
+            await this.fb.sendTextMessage(senderId, 
+                "❌ Ce pseudo n'est pas approprié.\n\n" +
+                "Choisissez un autre pseudo."
+            );
+            return true;
+        }
+
+        // Sauvegarder le pseudo
+        await User.findOneAndUpdate(
+            { facebookId: senderId },
+            { 
+                pseudo: newPseudo,
+                waitingForPseudo: false
+            }
+        );
+
+        await this.fb.sendTextMessage(senderId, 
+            `✅ Pseudo changé avec succès !\n\n` +
+            `Vous êtes maintenant : ${newPseudo}\n\n` +
+            `Tapez /chercher pour trouver quelqu'un.`
+        );
+
+        return true;
     }
 
     // Afficher les statistiques
@@ -338,52 +310,22 @@ class MessageHandler {
             return;
         }
 
-        const stats = `📊 Vos statistiques :\n\n` +
+        const memberSince = user.createdAt ? 
+            new Date(user.createdAt).toLocaleDateString('fr-FR') : 
+            'Inconnu';
+
+        const stats = 
+            `📊 VOS STATISTIQUES\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
             `👤 Pseudo : ${user.pseudo || 'Non défini'}\n` +
             `💬 Conversations : ${user.totalConversations || 0}\n` +
             `📝 Messages envoyés : ${user.totalMessages || 0}\n` +
             `⭐ Note moyenne : ${user.rating ? user.rating.toFixed(1) : '5.0'}/5\n` +
-            `📅 Membre depuis : ${user.createdAt?.toLocaleDateString('fr-FR') || 'Inconnu'}\n` +
-            `🎯 Intérêts : ${user.interests?.join(', ') || 'Aucun'}`;
+            `📅 Membre depuis : ${memberSince}\n` +
+            `⚠️ Avertissements : ${user.warningCount || 0}\n\n` +
+            `Tapez /help pour voir les commandes.`;
 
         await this.fb.sendTextMessage(senderId, stats);
-        
-        // Proposer des actions
-        const quickReplies = [
-            {
-                content_type: 'text',
-                title: '🔍 Nouvelle recherche',
-                payload: 'CHERCHER'
-            },
-            {
-                content_type: 'text',
-                title: '✏️ Changer de pseudo',
-                payload: 'PSEUDO'
-            }
-        ];
-
-        await this.fb.sendQuickReply(senderId, "Que souhaitez-vous faire ?", quickReplies);
-    }
-
-    // Afficher l'aide
-    async showHelp(senderId) {
-        const helpMessage = `❓ Aide - Commandes disponibles :\n\n` +
-            `🔍 /chercher - Trouver un partenaire\n` +
-            `🛑 /stop - Terminer la conversation\n` +
-            `✏️ /pseudo - Changer votre pseudo\n` +
-            `📊 /stats - Voir vos statistiques\n` +
-            `🚨 /signaler - Signaler un utilisateur\n` +
-            `📋 /menu - Afficher le menu principal\n` +
-            `❓ /help - Afficher cette aide\n\n` +
-            `💡 Conseils :\n` +
-            `• Restez respectueux\n` +
-            `• Ne partagez pas d'infos personnelles\n` +
-            `• Signalez les comportements inappropriés\n` +
-            `• Amusez-vous ! 🎉`;
-
-        await this.fb.sendTextMessage(senderId, helpMessage);
-        
-        await this.showMainMenu(senderId);
     }
 
     // Signaler un utilisateur
@@ -392,42 +334,44 @@ class MessageHandler {
         
         if (!chatInfo) {
             await this.fb.sendTextMessage(senderId, 
-                "❌ Vous devez être en conversation pour signaler quelqu'un."
+                "❌ Vous devez être en conversation pour signaler quelqu'un.\n\n" +
+                "Le signalement concerne votre partenaire actuel."
             );
             return;
         }
 
-        const message = "🚨 Pourquoi souhaitez-vous signaler cet utilisateur ?";
-        
-        const quickReplies = [
-            {
-                content_type: 'text',
-                title: '🤬 Langage offensant',
-                payload: `REPORT_offensive_${chatInfo.partnerId}`
-            },
-            {
-                content_type: 'text',
-                title: '😈 Harcèlement',
-                payload: `REPORT_harassment_${chatInfo.partnerId}`
-            },
-            {
-                content_type: 'text',
-                title: '📧 Spam',
-                payload: `REPORT_spam_${chatInfo.partnerId}`
-            },
-            {
-                content_type: 'text',
-                title: '🔞 Contenu inapproprié',
-                payload: `REPORT_inappropriate_${chatInfo.partnerId}`
-            },
-            {
-                content_type: 'text',
-                title: '❌ Annuler',
-                payload: 'CANCEL_REPORT'
-            }
-        ];
+        // Créer le signalement
+        await Report.create({
+            reporterId: senderId,
+            reportedUserId: chatInfo.partnerId,
+            chatId: chatInfo.chatId,
+            reason: 'Comportement inapproprié',
+            createdAt: new Date(),
+            status: 'pending'
+        });
 
-        await this.fb.sendQuickReply(senderId, message, quickReplies);
+        await this.fb.sendTextMessage(senderId, 
+            "✅ Signalement enregistré.\n\n" +
+            "Notre équipe examinera le signalement rapidement.\n" +
+            "La conversation a été terminée.\n\n" +
+            "Tapez /chercher pour trouver un nouveau partenaire."
+        );
+
+        // Terminer la conversation
+        await this.chatManager.endChat(senderId, 'reported');
+    }
+
+    // Gérer les postbacks (si nécessaire)
+    async handlePostback(senderId, postback) {
+        const payload = postback.payload;
+        
+        switch(payload) {
+            case 'GET_STARTED':
+                await this.sendWelcomeMessage(senderId);
+                break;
+            default:
+                await this.showHelp(senderId);
+        }
     }
 }
 
