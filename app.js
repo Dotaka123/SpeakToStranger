@@ -809,6 +809,117 @@ L'équipe SpeakToStranger 🎭`;
     }
 });
 
+// Route pour bloquer un utilisateur
+app.post('/admin/user/:userId/block', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { reason } = req.body;
+        
+        // Bloquer l'utilisateur dans la base de données
+        const updateResult = await User.findOneAndUpdate(
+            { facebookId: userId },
+            { 
+                isBlocked: true,
+                blockedAt: new Date(),
+                blockReason: reason || 'Violation des règles',
+                status: 'blocked' // Ajouter un statut
+            },
+            { new: true } // Retourner le document mis à jour
+        );
+        
+        if (!updateResult) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Utilisateur non trouvé' 
+            });
+        }
+        
+        console.log(`✅ Utilisateur bloqué: ${userId} - Raison: ${reason}`);
+        
+        // Envoyer le message de blocage
+        const blockMessage = `🚫 VOTRE COMPTE A ÉTÉ SUSPENDU
+
+Raison: ${reason || 'Violation des conditions d\'utilisation'}
+
+Cette décision est définitive suite à des violations répétées de nos règles.
+
+L'équipe SpeakToStranger`;
+        
+        await facebookAPI.sendTextMessage(userId, blockMessage);
+        
+        // Si l'utilisateur est en conversation, la terminer
+        if (chatManager.isInChat(userId)) {
+            await chatManager.endChat(userId, 'user_blocked');
+        }
+        
+        // Retirer de la file d'attente si présent
+        if (chatManager.isInQueue(userId)) {
+            await chatManager.removeFromQueue(userId);
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Utilisateur bloqué avec succès',
+            user: updateResult 
+        });
+        
+    } catch (error) {
+        console.error('Erreur blocage utilisateur:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Route pour débloquer un utilisateur
+app.post('/admin/user/:userId/unblock', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const updateResult = await User.findOneAndUpdate(
+            { facebookId: userId },
+            { 
+                isBlocked: false,
+                blockedAt: null,
+                blockReason: null,
+                status: 'offline'
+            },
+            { new: true }
+        );
+        
+        if (!updateResult) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Utilisateur non trouvé' 
+            });
+        }
+        
+        console.log(`✅ Utilisateur débloqué: ${userId}`);
+        
+        // Informer l'utilisateur
+        await facebookAPI.sendTextMessage(userId, 
+            "✅ Votre compte a été rétabli !\n\n" +
+            "Vous pouvez à nouveau utiliser SpeakToStranger.\n\n" +
+            "Merci de respecter les règles de la communauté.\n\n" +
+            "Tapez /help pour commencer."
+        );
+        
+        res.json({ 
+            success: true, 
+            message: 'Utilisateur débloqué avec succès',
+            user: updateResult 
+        });
+        
+    } catch (error) {
+        console.error('Erreur déblocage utilisateur:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
 // Route pour envoyer un message personnalisé
 app.post('/admin/user/:userId/message', async (req, res) => {
     try {
