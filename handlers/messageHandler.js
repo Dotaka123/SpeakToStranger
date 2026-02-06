@@ -9,6 +9,47 @@ class MessageHandler {
         this.fb = facebookAPI;
     }
 
+    // Générateur de pseudos aléatoires
+const ADJECTIVES = [
+    'Brave', 'Joyeux', 'Sage', 'Brillant', 'Mystique', 'Rapide', 'Calme', 
+    'Fou', 'Noble', 'Vif', 'Doux', 'Fort', 'Agile', 'Rusé', 'Jovial',
+    'Zen', 'Cool', 'Super', 'Mega', 'Ultra', 'Hyper', 'Epic', 'Pro',
+    'Royal', 'Cosmic', 'Astral', 'Lunar', 'Solar', 'Star', 'Dream'
+];
+
+const NOUNS = [
+    'Chat', 'Panda', 'Lion', 'Tigre', 'Aigle', 'Loup', 'Renard', 
+    'Dragon', 'Phoenix', 'Ninja', 'Pirate', 'Chevalier', 'Mage', 'Guerrier',
+    'Voyageur', 'Explorateur', 'Artiste', 'Poète', 'Sage', 'Héros', 'Fantôme',
+    'Robot', 'Alien', 'Cyborg', 'Génie', 'Wizard', 'Master', 'Boss'
+];
+
+function generateRandomPseudo() {
+    const adjective = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+    const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+    const number = Math.floor(Math.random() * 9999);
+    return `${adjective}${noun}${number}`;
+}
+
+// Fonction pour s'assurer que le pseudo est unique
+async function generateUniquePseudo() {
+    const { User } = require('../models');
+    let pseudo;
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    do {
+        pseudo = generateRandomPseudo();
+        const exists = await User.findOne({ pseudo });
+        if (!exists) {
+            return pseudo;
+        }
+        attempts++;
+    } while (attempts < maxAttempts);
+    
+    // Si on n'arrive pas à trouver un pseudo unique, ajouter un timestamp
+    return `User${Date.now()}`;
+}
     // Gérer les événements Facebook
     async handleEvent(event) {
         try {
