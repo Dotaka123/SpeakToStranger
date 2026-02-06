@@ -122,7 +122,7 @@ app.get('/admin', auth.requireAdmin, async (req, res) => {
 // ========================================
 // PAGE DES SIGNALEMENTS CORRIGÉE
 // ========================================
-app.get('/admin/reports-simple', async (req, res) => {
+app.get('/admin/reports', async (req, res) => {
     try {
         let reports = [];
         let users = new Map();
