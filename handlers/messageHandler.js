@@ -594,31 +594,89 @@ class MessageHandler {
         }
     }
 
-    // Gérer les feedbacks
-    async handleFeedback(senderId, feedbackText) {
-        try {
-            if (!feedbackText || feedbackText.trim() === '') {
-                await this.fb.sendTextMessage(senderId,
-                    "❌ Format : /feedback Votre message\n\n" +
-                    "Exemple : /feedback Super bot !"
-                );
-                return;
-            }
-
-            console.log(`📝 Feedback de ${senderId}: ${feedbackText}`);
-
+   // Dans messageHandler.js
+async handleFeedback(senderId, feedbackText) {
+    try {
+        if (!feedbackText || feedbackText.trim() === '') {
             await this.fb.sendTextMessage(senderId,
-                "✅ Merci pour votre feedback !\n\n" +
-                "Votre message a été transmis. 💙"
+                "❌ Format incorrect !\n\n" +
+                "Utilisation : /feedback Votre message\n\n" +
+                "Exemples :\n" +
+                "• /feedback J'adore ce bot !\n" +
+                "• /feedback Bug: impossible d'envoyer des photos\n" +
+                "• /feedback Suggestion: ajouter des salons thématiques"
             );
-
-        } catch (error) {
-            console.error('Erreur feedback:', error);
-            await this.fb.sendTextMessage(senderId,
-                "❌ Erreur lors de l'envoi du feedback."
-            );
+            return;
         }
+
+        // Récupérer les infos utilisateur
+        const user = await User.findOne({ facebookId: senderId });
+        const userPseudo = user?.pseudo || 'Anonyme';
+
+        // Déterminer le type de feedback
+        let feedbackType = 'other';
+        const lowerText = feedbackText.toLowerCase();
+        
+        if (lowerText.includes('bug') || lowerText.includes('erreur') || lowerText.includes('probleme')) {
+            feedbackType = 'bug';
+        } else if (lowerText.includes('suggestion') || lowerText.includes('idee') || lowerText.includes('proposer')) {
+            feedbackType = 'suggestion';
+        } else if (lowerText.includes('merci') || lowerText.includes('super') || lowerText.includes('génial')) {
+            feedbackType = 'compliment';
+        } else if (lowerText.includes('nul') || lowerText.includes('mauvais') || lowerText.includes('problème')) {
+            feedbackType = 'complaint';
+        }
+
+        // Sauvegarder le feedback dans MongoDB
+        const { Feedback } = require('../models');
+        const feedback = await Feedback.create({
+            userId: senderId,
+            userPseudo: userPseudo,
+            message: feedbackText,
+            type: feedbackType,
+            status: 'pending',
+            timestamp: new Date()
+        });
+
+        console.log(`📝 Nouveau feedback (${feedbackType}) de ${userPseudo}: ${feedbackText}`);
+
+        // Message de confirmation personnalisé selon le type
+        let confirmMessage = "✅ Merci pour votre feedback !\n\n";
+        
+        switch(feedbackType) {
+            case 'bug':
+                confirmMessage += "🐛 Nous avons bien reçu votre rapport de bug.\n" +
+                                "Notre équipe technique va l'examiner rapidement.";
+                break;
+            case 'suggestion':
+                confirmMessage += "💡 Votre suggestion a été enregistrée.\n" +
+                                "Nous étudions toutes les idées pour améliorer le bot !";
+                break;
+            case 'compliment':
+                confirmMessage += "❤️ Merci beaucoup pour vos encouragements !\n" +
+                                "Ça nous motive à continuer d'améliorer le service.";
+                break;
+            case 'complaint':
+                confirmMessage += "😔 Nous sommes désolés que vous ayez eu une mauvaise expérience.\n" +
+                                "Nous allons examiner votre retour pour nous améliorer.";
+                break;
+            default:
+                confirmMessage += "Votre message a été transmis à l'équipe.\n" +
+                                "Nous apprécions votre contribution !";
+        }
+
+        confirmMessage += "\n\n💙 L'équipe SpeakToStranger";
+
+        await this.fb.sendTextMessage(senderId, confirmMessage);
+
+    } catch (error) {
+        console.error('Erreur feedback:', error);
+        await this.fb.sendTextMessage(senderId,
+            "❌ Erreur lors de l'envoi du feedback.\n\n" +
+            "Veuillez réessayer plus tard."
+        );
     }
+}
 
     // Gérer les postbacks
     async handlePostback(senderId, postback) {
