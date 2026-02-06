@@ -18,7 +18,7 @@ const UserManager = require('./handlers/userManager');
 const MessageHandler = require('./handlers/messageHandler');
 
 // Démarrer le nettoyage automatique
-chatManager.startAutoCleanup();
+ChatManager.startAutoCleanup();
 
 // Configuration
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN || 'VOTRE_TOKEN_ICI';
