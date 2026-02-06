@@ -4,45 +4,81 @@ const { Chat, User, Queue } = require('../models');
 
 class ChatManager {
     constructor() {
-        this.fb = facebookAPI; // Utiliser directement l'instance exportée
+        this.fb = facebookAPI;
         this.activeChats = new Map();
         this.waitingQueue = [];
+    }
+
+    // Vérifier si un utilisateur est en file d'attente
+    isInQueue(userId) {
+        return this.waitingQueue.some(u => u.userId === userId);
+    }
+
+    // Vérifier si un utilisateur est en conversation
+    isInChat(userId) {
+        return this.activeChats.has(userId);
+    }
+
+    // Obtenir les infos de conversation d'un utilisateur
+    getChatInfo(userId) {
+        return this.activeChats.get(userId);
     }
 
     // Ajouter un utilisateur à la file d'attente
     async addToQueue(userId, userPreferences = {}) {
         try {
-            // Vérifier si l'utilisateur n'est pas déjà en file d'attente
-            if (this.waitingQueue.find(u => u.userId === userId)) {
-                await this.fb.sendTextMessage(userId, "🔄 Vous êtes déjà en recherche d'un partenaire...");
+            // Vérifier si déjà en file d'attente
+            if (this.isInQueue(userId)) {
+                await this.fb.sendTextMessage(userId, 
+                    "🔄 Vous êtes déjà en recherche d'un partenaire...\n\n" +
+                    "Patience, nous cherchons quelqu'un pour vous !"
+                );
                 return;
             }
 
-            // Vérifier si l'utilisateur n'est pas déjà en conversation
-            if (this.activeChats.has(userId)) {
-                await this.fb.sendTextMessage(userId, "💬 Vous êtes déjà en conversation !");
+            // Vérifier si déjà en conversation
+            if (this.isInChat(userId)) {
+                await this.fb.sendTextMessage(userId, 
+                    "💬 Vous êtes déjà en conversation !\n\n" +
+                    "Tapez /stop pour terminer votre conversation actuelle."
+                );
                 return;
             }
+
+            // Récupérer les infos de l'utilisateur
+            const user = await User.findOne({ facebookId: userId });
+            const pseudo = user?.pseudo || 'Anonyme';
 
             // Ajouter à la file d'attente
-            this.waitingQueue.push({
+            const queueEntry = {
                 userId,
+                pseudo,
                 preferences: userPreferences,
                 joinedAt: new Date()
-            });
+            };
+
+            this.waitingQueue.push(queueEntry);
 
             // Sauvegarder en base de données
-            await Queue.create({
-                userId,
-                preferences: userPreferences,
-                joinedAt: new Date()
-            });
+            await Queue.create(queueEntry);
 
-            // Essayer de matcher
+            // Message de confirmation
+            await this.fb.sendTextMessage(userId, 
+                "🔍 Recherche en cours...\n\n" +
+                "Vous êtes dans la file d'attente.\n" +
+                "Nous vous connecterons dès qu'un partenaire sera disponible !\n\n" +
+                "💡 Tapez /stop pour annuler la recherche."
+            );
+
+            // Essayer de matcher immédiatement
             await this.tryMatch(userId);
+
         } catch (error) {
             console.error('Erreur ajout file d\'attente:', error);
-            await this.fb.sendTextMessage(userId, "❌ Une erreur s'est produite. Veuillez réessayer.");
+            await this.fb.sendTextMessage(userId, 
+                "❌ Une erreur s'est produite.\n\n" +
+                "Veuillez réessayer avec /chercher"
+            );
         }
     }
 
@@ -53,13 +89,14 @@ class ChatManager {
 
         const user = this.waitingQueue[userIndex];
 
-        // Chercher un partenaire compatible
+        // Chercher un partenaire dans la file
         for (let i = 0; i < this.waitingQueue.length; i++) {
             if (i !== userIndex) {
                 const partner = this.waitingQueue[i];
                 
-                // Vérifier la compatibilité (vous pouvez ajouter des critères)
-                if (this.areCompatible(user, partner)) {
+                // Vérifier qu'ils ne sont pas le même utilisateur
+                if (partner.userId !== user.userId) {
+                    // Match trouvé !
                     // Retirer les deux de la file d'attente
                     this.waitingQueue = this.waitingQueue.filter(
                         u => u.userId !== user.userId && u.userId !== partner.userId
@@ -71,110 +108,164 @@ class ChatManager {
                     });
 
                     // Créer la conversation
-                    await this.createChat(user.userId, partner.userId);
+                    await this.createChat(user, partner);
                     return;
                 }
             }
         }
 
-        // Pas de match trouvé
-        await this.fb.sendTextMessage(userId, "🔍 Recherche d'un partenaire en cours...\n\nVous recevrez une notification dès qu'un partenaire sera trouvé !");
-    }
-
-    // Vérifier la compatibilité
-    areCompatible(user1, user2) {
-        // Logique de compatibilité simple
-        // Vous pouvez améliorer selon vos besoins
-        
-        // Si les deux ont des préférences d'intérêts
-        if (user1.preferences?.interests && user2.preferences?.interests) {
-            const commonInterests = user1.preferences.interests.filter(
-                i => user2.preferences.interests.includes(i)
+        // Pas de match trouvé - l'utilisateur reste en file d'attente
+        const queueLength = this.waitingQueue.length;
+        if (queueLength > 1) {
+            await this.fb.sendTextMessage(userId, 
+                `⏳ ${queueLength - 1} personne(s) en attente...\n` +
+                "Nous cherchons le meilleur match pour vous !"
             );
-            return commonInterests.length > 0;
         }
-
-        // Par défaut, tout le monde est compatible
-        return true;
     }
 
     // Créer une nouvelle conversation
-    async createChat(userId1, userId2) {
+    async createChat(user1, user2) {
         try {
-            // Récupérer les infos des utilisateurs
-            const [user1, user2] = await Promise.all([
-                User.findOne({ facebookId: userId1 }),
-                User.findOne({ facebookId: userId2 })
-            ]);
-
             // Créer le chat en base de données
             const chat = await Chat.create({
                 participants: [
-                    { userId: userId1, pseudo: user1?.pseudo },
-                    { userId: userId2, pseudo: user2?.pseudo }
+                    { 
+                        userId: user1.userId, 
+                        pseudo: user1.pseudo || 'Anonyme' 
+                    },
+                    { 
+                        userId: user2.userId, 
+                        pseudo: user2.pseudo || 'Anonyme' 
+                    }
                 ],
                 startedAt: new Date(),
+                lastActivity: new Date(),
                 isActive: true,
                 messageCount: 0
             });
 
             // Stocker dans la map active
-            this.activeChats.set(userId1, {
+            this.activeChats.set(user1.userId, {
                 chatId: chat._id,
-                partnerId: userId2,
-                partnerPseudo: user2?.pseudo || 'Inconnu'
+                partnerId: user2.userId,
+                partnerPseudo: user2.pseudo || 'Anonyme'
             });
 
-            this.activeChats.set(userId2, {
+            this.activeChats.set(user2.userId, {
                 chatId: chat._id,
-                partnerId: userId1,
-                partnerPseudo: user1?.pseudo || 'Inconnu'
+                partnerId: user1.userId,
+                partnerPseudo: user1.pseudo || 'Anonyme'
             });
 
-            // Notifier les deux utilisateurs
-            const message1 = `🎉 Match trouvé !\n\nVous êtes maintenant connecté avec ${user2?.pseudo || 'un utilisateur'}.\n\n💬 Dites bonjour pour commencer la conversation !\n\nTapez /stop pour terminer la conversation.`;
-            const message2 = `🎉 Match trouvé !\n\nVous êtes maintenant connecté avec ${user1?.pseudo || 'un utilisateur'}.\n\n💬 Dites bonjour pour commencer la conversation !\n\nTapez /stop pour terminer la conversation.`;
+            // Message de connexion pour user1
+            const message1 = 
+                "🎉 MATCH TROUVÉ !\n" +
+                "━━━━━━━━━━━━━━━━━━\n" +
+                `Vous êtes connecté avec : ${user2.pseudo || 'Anonyme'}\n\n` +
+                "💬 Dites bonjour pour commencer !\n\n" +
+                "Commandes disponibles :\n" +
+                "/stop - Terminer la conversation\n" +
+                "/signaler - Signaler un comportement inapproprié";
+
+            // Message de connexion pour user2
+            const message2 = 
+                "🎉 MATCH TROUVÉ !\n" +
+                "━━━━━━━━━━━━━━━━━━\n" +
+                `Vous êtes connecté avec : ${user1.pseudo || 'Anonyme'}\n\n` +
+                "💬 Dites bonjour pour commencer !\n\n" +
+                "Commandes disponibles :\n" +
+                "/stop - Terminer la conversation\n" +
+                "/signaler - Signaler un comportement inapproprié";
 
             await Promise.all([
-                this.fb.sendTextMessage(userId1, message1),
-                this.fb.sendTextMessage(userId2, message2)
+                this.fb.sendTextMessage(user1.userId, message1),
+                this.fb.sendTextMessage(user2.userId, message2)
             ]);
 
+            // Mettre à jour les stats des utilisateurs
+            await User.updateMany(
+                { facebookId: { $in: [user1.userId, user2.userId] } },
+                { $inc: { totalConversations: 1 } }
+            );
+
+            console.log(`✅ Chat créé entre ${user1.pseudo} et ${user2.pseudo}`);
             return chat;
+
         } catch (error) {
             console.error('Erreur création chat:', error);
             
             // Notifier les utilisateurs de l'erreur
+            const errorMessage = 
+                "❌ Erreur lors de la création de la conversation.\n\n" +
+                "Veuillez réessayer avec /chercher";
+
             await Promise.all([
-                this.fb.sendTextMessage(userId1, "❌ Erreur lors de la création de la conversation."),
-                this.fb.sendTextMessage(userId2, "❌ Erreur lors de la création de la conversation.")
+                this.fb.sendTextMessage(user1.userId, errorMessage),
+                this.fb.sendTextMessage(user2.userId, errorMessage)
             ]);
         }
     }
 
-    // Transférer un message
+    // Transférer un message entre partenaires
     async relayMessage(senderId, message) {
         const chat = this.activeChats.get(senderId);
         if (!chat) {
-            await this.fb.sendTextMessage(senderId, "❌ Vous n'êtes pas en conversation actuellement.\n\nTapez /chercher pour trouver un partenaire.");
+            await this.fb.sendTextMessage(senderId, 
+                "❌ Vous n'êtes pas en conversation.\n\n" +
+                "Tapez /chercher pour trouver un partenaire."
+            );
             return false;
         }
 
         try {
-            // Mettre à jour le compteur de messages
+            // Mettre à jour les stats
             await Chat.findByIdAndUpdate(chat.chatId, {
                 $inc: { messageCount: 1 },
                 lastActivity: new Date()
             });
 
-            // Transférer le message au partenaire
+            await User.findOneAndUpdate(
+                { facebookId: senderId },
+                { $inc: { totalMessages: 1 } }
+            );
+
+            // Transférer le message
             if (message.text) {
-                await this.fb.sendTextMessage(chat.partnerId, `${chat.partnerPseudo}: ${message.text}`);
+                // Message texte simple
+                const relayedMessage = `💬 ${chat.partnerPseudo}: ${message.text}`;
+                await this.fb.sendTextMessage(chat.partnerId, relayedMessage);
             } else if (message.attachments) {
-                await this.fb.sendTextMessage(chat.partnerId, `${chat.partnerPseudo} a envoyé une pièce jointe`);
+                // Gérer les pièces jointes
+                const attachmentType = message.attachments[0].type;
+                let notification = '';
+                
+                switch(attachmentType) {
+                    case 'image':
+                        notification = `📷 ${chat.partnerPseudo} a envoyé une image`;
+                        break;
+                    case 'video':
+                        notification = `🎥 ${chat.partnerPseudo} a envoyé une vidéo`;
+                        break;
+                    case 'audio':
+                        notification = `🎵 ${chat.partnerPseudo} a envoyé un audio`;
+                        break;
+                    case 'file':
+                        notification = `📎 ${chat.partnerPseudo} a envoyé un fichier`;
+                        break;
+                    default:
+                        notification = `📎 ${chat.partnerPseudo} a envoyé une pièce jointe`;
+                }
+                
+                await this.fb.sendTextMessage(chat.partnerId, notification);
+            } else if (message.sticker_id) {
+                await this.fb.sendTextMessage(chat.partnerId, 
+                    `😊 ${chat.partnerPseudo} a envoyé un sticker`
+                );
             }
 
             return true;
+
         } catch (error) {
             console.error('Erreur transfert message:', error);
             return false;
@@ -198,54 +289,44 @@ class ChatManager {
             this.activeChats.delete(userId);
             this.activeChats.delete(chat.partnerId);
 
-            // Notifier les deux utilisateurs
-            const endMessage = "🔚 La conversation est terminée.\n\nTapez /chercher pour trouver un nouveau partenaire.";
+            // Messages de fin
+            const endMessage1 = 
+                "🔚 Conversation terminée.\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "J'espère que vous avez passé un bon moment !\n\n" +
+                "Que voulez-vous faire ?\n" +
+                "/chercher - Trouver un nouveau partenaire\n" +
+                "/stats - Voir vos statistiques\n" +
+                "/help - Afficher l'aide";
+
+            const endMessage2 = 
+                "🔚 Votre partenaire a quitté la conversation.\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "Que voulez-vous faire ?\n" +
+                "/chercher - Trouver un nouveau partenaire\n" +
+                "/stats - Voir vos statistiques\n" +
+                "/help - Afficher l'aide";
+
+            await this.fb.sendTextMessage(userId, endMessage1);
             
-            await Promise.all([
-                this.fb.sendTextMessage(userId, endMessage),
-                this.fb.sendTextMessage(chat.partnerId, "🔚 Votre partenaire a quitté la conversation.\n\n" + endMessage)
-            ]);
+            if (reason !== 'reported') {
+                await this.fb.sendTextMessage(chat.partnerId, endMessage2);
+            }
 
-            // Proposer de chercher un nouveau partenaire
-            const quickReplies = [
-                {
-                    content_type: 'text',
-                    title: '🔍 Nouvelle recherche',
-                    payload: 'CHERCHER'
-                },
-                {
-                    content_type: 'text',
-                    title: '📊 Mes stats',
-                    payload: 'STATS'
-                }
-            ];
-
-            await Promise.all([
-                this.fb.sendQuickReply(userId, "Que souhaitez-vous faire ?", quickReplies),
-                this.fb.sendQuickReply(chat.partnerId, "Que souhaitez-vous faire ?", quickReplies)
-            ]);
-
+            console.log(`✅ Chat terminé entre ${userId} et ${chat.partnerId}`);
             return true;
+
         } catch (error) {
             console.error('Erreur fin chat:', error);
             return false;
         }
     }
 
-    // Vérifier si un utilisateur est en conversation
-    isInChat(userId) {
-        return this.activeChats.has(userId);
-    }
-
-    // Obtenir les infos de conversation d'un utilisateur
-    getChatInfo(userId) {
-        return this.activeChats.get(userId);
-    }
-
     // Retirer un utilisateur de la file d'attente
     async removeFromQueue(userId) {
         this.waitingQueue = this.waitingQueue.filter(u => u.userId !== userId);
         await Queue.deleteOne({ userId });
+        console.log(`✅ ${userId} retiré de la file d'attente`);
     }
 
     // Obtenir le nombre d'utilisateurs en attente
@@ -258,26 +339,41 @@ class ChatManager {
         return this.activeChats.size / 2; // Divisé par 2 car chaque chat a 2 participants
     }
 
-    // Nettoyer les vieilles entrées (à appeler périodiquement)
+    // Nettoyer les vieilles entrées (appeler périodiquement)
     async cleanup() {
         try {
-            // Nettoyer la file d'attente (+ de 30 minutes)
-            const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+            // Nettoyer la file d'attente (+ de 10 minutes)
+            const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
             
-            this.waitingQueue = this.waitingQueue.filter(
-                u => u.joinedAt > thirtyMinutesAgo
+            const oldEntries = this.waitingQueue.filter(
+                u => u.joinedAt < tenMinutesAgo
             );
 
-            await Queue.deleteMany({
-                joinedAt: { $lt: thirtyMinutesAgo }
-            });
+            if (oldEntries.length > 0) {
+                // Notifier les utilisateurs
+                for (const entry of oldEntries) {
+                    await this.fb.sendTextMessage(entry.userId, 
+                        "⏱️ Recherche expirée (inactivité).\n\n" +
+                        "Tapez /chercher pour relancer une recherche."
+                    );
+                }
 
-            // Marquer les chats inactifs comme terminés (+ de 1 heure sans activité)
-            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+                // Retirer de la file
+                this.waitingQueue = this.waitingQueue.filter(
+                    u => u.joinedAt >= tenMinutesAgo
+                );
+
+                await Queue.deleteMany({
+                    joinedAt: { $lt: tenMinutesAgo }
+                });
+            }
+
+            // Marquer les chats inactifs comme terminés (+ de 30 minutes sans activité)
+            const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
             
             const inactiveChats = await Chat.find({
                 isActive: true,
-                lastActivity: { $lt: oneHourAgo }
+                lastActivity: { $lt: thirtyMinutesAgo }
             });
 
             for (const chat of inactiveChats) {
@@ -292,6 +388,16 @@ class ChatManager {
         } catch (error) {
             console.error('Erreur nettoyage:', error);
         }
+    }
+
+    // Initialiser le nettoyage automatique
+    startAutoCleanup() {
+        // Nettoyer toutes les 5 minutes
+        setInterval(() => {
+            this.cleanup();
+        }, 5 * 60 * 1000);
+        
+        console.log('🔄 Nettoyage automatique activé');
     }
 }
 
