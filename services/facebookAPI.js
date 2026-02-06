@@ -8,109 +8,132 @@ class FacebookAPI {
         this.API_URL = 'https://graph.facebook.com/v18.0';
     }
 
+    // AJOUTEZ CETTE MÉTHODE ICI (après le constructor)
+    async callSendAPI(messageData) {
+        try {
+            const response = await fetch(`${this.API_URL}/me/messages?access_token=${this.PAGE_ACCESS_TOKEN}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(messageData)
+            });
 
-    // services/facebookAPI.js
+            const data = await response.json();
+            
+            if (data.error) {
+                console.error('Erreur Facebook API:', data.error);
+                throw new Error(data.error.message);
+            }
+            
+            return data;
+        } catch (error) {
+            console.error('Erreur envoi message:', error);
+            throw error;
+        }
+    }
 
-// Envoyer une image
-async sendImageMessage(recipientId, imageUrl) {
-    const messageData = {
-        recipient: { id: recipientId },
-        message: {
-            attachment: {
-                type: 'image',
-                payload: {
-                    url: imageUrl,
-                    is_reusable: true
+    // Envoyer une image
+    async sendImageMessage(recipientId, imageUrl) {
+        const messageData = {
+            recipient: { id: recipientId },
+            message: {
+                attachment: {
+                    type: 'image',
+                    payload: {
+                        url: imageUrl,
+                        is_reusable: true
+                    }
                 }
             }
-        }
-    };
-    return this.callSendAPI(messageData);
-}
+        };
+        return this.callSendAPI(messageData);
+    }
 
-// Envoyer une vidéo
-async sendVideoMessage(recipientId, videoUrl) {
-    const messageData = {
-        recipient: { id: recipientId },
-        message: {
-            attachment: {
-                type: 'video',
-                payload: {
-                    url: videoUrl,
-                    is_reusable: true
+    // Envoyer une vidéo
+    async sendVideoMessage(recipientId, videoUrl) {
+        const messageData = {
+            recipient: { id: recipientId },
+            message: {
+                attachment: {
+                    type: 'video',
+                    payload: {
+                        url: videoUrl,
+                        is_reusable: true
+                    }
                 }
             }
-        }
-    };
-    return this.callSendAPI(messageData);
-}
+        };
+        return this.callSendAPI(messageData);
+    }
 
-// Envoyer un audio
-async sendAudioMessage(recipientId, audioUrl) {
-    const messageData = {
-        recipient: { id: recipientId },
-        message: {
-            attachment: {
-                type: 'audio',
-                payload: {
-                    url: audioUrl,
-                    is_reusable: true
+    // Envoyer un audio
+    async sendAudioMessage(recipientId, audioUrl) {
+        const messageData = {
+            recipient: { id: recipientId },
+            message: {
+                attachment: {
+                    type: 'audio',
+                    payload: {
+                        url: audioUrl,
+                        is_reusable: true
+                    }
                 }
             }
-        }
-    };
-    return this.callSendAPI(messageData);
-}
+        };
+        return this.callSendAPI(messageData);
+    }
 
-// Envoyer un fichier
-async sendFileMessage(recipientId, fileUrl) {
-    const messageData = {
-        recipient: { id: recipientId },
-        message: {
-            attachment: {
-                type: 'file',
-                payload: {
-                    url: fileUrl,
-                    is_reusable: true
+    // Envoyer un fichier
+    async sendFileMessage(recipientId, fileUrl) {
+        const messageData = {
+            recipient: { id: recipientId },
+            message: {
+                attachment: {
+                    type: 'file',
+                    payload: {
+                        url: fileUrl,
+                        is_reusable: true
+                    }
                 }
             }
-        }
-    };
-    return this.callSendAPI(messageData);
-}
+        };
+        return this.callSendAPI(messageData);
+    }
 
-// Envoyer une localisation
-async sendLocationMessage(recipientId, lat, long) {
-    const messageData = {
-        recipient: { id: recipientId },
-        message: {
-            attachment: {
-                type: 'template',
-                payload: {
-                    template_type: 'generic',
-                    elements: [{
-                        title: '📍 Localisation partagée',
-                        subtitle: `Coordonnées: ${lat}, ${long}`,
-                        image_url: `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${long}&zoom=15&size=300x300&markers=${lat},${long}`
-                    }]
+    // Envoyer une localisation
+    async sendLocationMessage(recipientId, lat, long) {
+        const messageData = {
+            recipient: { id: recipientId },
+            message: {
+                attachment: {
+                    type: 'template',
+                    payload: {
+                        template_type: 'generic',
+                        elements: [{
+                            title: '📍 Localisation partagée',
+                            subtitle: `Coordonnées: ${lat}, ${long}`,
+                            image_url: `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${long}&zoom=15&size=300x300&markers=${lat},${long}`
+                        }]
+                    }
                 }
             }
-        }
-    };
-    return this.callSendAPI(messageData);
-}
+        };
+        return this.callSendAPI(messageData);
+    }
 
-// Envoyer un sticker
-async sendStickerMessage(recipientId, stickerId) {
-    const messageData = {
-        recipient: { id: recipientId },
-        message: {
-            sticker_id: stickerId
-        }
-    };
-    return this.callSendAPI(messageData);
-}
-    // Envoyer un message texte
+    // Envoyer un sticker
+    async sendStickerMessage(recipientId, stickerId) {
+        const messageData = {
+            recipient: { id: recipientId },
+            message: {
+                sticker_id: stickerId
+            }
+        };
+        return this.callSendAPI(messageData);
+    }
+
+    // Envoyer un message texte (vous pouvez garder votre version ou la simplifier)
     async sendTextMessage(recipientId, text) {
         try {
             const response = await fetch(`${this.API_URL}/me/messages?access_token=${this.PAGE_ACCESS_TOKEN}`, {
@@ -137,6 +160,8 @@ async sendStickerMessage(recipientId, stickerId) {
             return { success: false, error: error.message };
         }
     }
+
+    // ... reste de vos méthodes existantes ...
 
     // Envoyer un message avec quick replies
     async sendQuickReply(recipientId, text, quickReplies) {
