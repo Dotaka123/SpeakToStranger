@@ -1721,32 +1721,59 @@ for (let chat of recentChats) {
                 </div>
                 
                 <div class="section">
-                    <h2>💬 Dernières Conversations</h2>
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Participants</th>
-                                <th>Début</th>
-                                <th>Statut</th>
-                                <th>Messages</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${recentChats.map(chat => `
-                                <tr>
-                                    <td>${chat.participants?.map(p => p.pseudo).join(' ↔ ') || 'N/A'}</td>
-                                    <td>${new Date(chat.startedAt).toLocaleString('fr-FR')}</td>
-                                    <td>
-                                        <span class="badge ${chat.status === 'active' ? 'badge-success' : 'badge-info'}">
-                                            ${chat.status}
-                                        </span>
-                                    </td>
-                                    <td>${chat.messageCount || 0}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
+    <h2>💬 Dernières Conversations</h2>
+    ${recentChats.length > 0 ? `
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Participants</th>
+                    <th>Début</th>
+                    <th>Statut</th>
+                    <th>Messages</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${recentChats.map(chat => {
+                    // Gérer les dates de manière sûre
+                    let dateStr = 'Date inconnue';
+                    try {
+                        const chatDate = chat.startedAt || chat.createdAt;
+                        if (chatDate && !isNaN(new Date(chatDate).getTime())) {
+                            dateStr = new Date(chatDate).toLocaleString('fr-FR');
+                        }
+                    } catch (e) {
+                        console.error('Erreur date:', e);
+                    }
+                    
+                    // Gérer les participants
+                    let participants = 'N/A';
+                    if (chat.participants && chat.participants.length > 0) {
+                        participants = chat.participants
+                            .map(p => p.pseudo || 'Anonyme')
+                            .join(' ↔ ');
+                    }
+                    
+                    // Gérer le statut
+                    const status = chat.status || (chat.isActive ? 'active' : 'ended');
+                    const statusClass = status === 'active' ? 'badge-success' : 'badge-info';
+                    
+                    return `
+                        <tr>
+                            <td>${participants}</td>
+                            <td>${dateStr}</td>
+                            <td>
+                                <span class="badge ${statusClass}">
+                                    ${status === 'active' ? 'Active' : 'Terminée'}
+                                </span>
+                            </td>
+                            <td>${chat.messageCount || 0}</td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    ` : '<p>Aucune conversation récente</p>'}
+</div>
                 
                 <div class="refresh-time">
                     Dernière mise à jour: ${new Date().toLocaleString('fr-FR')}
