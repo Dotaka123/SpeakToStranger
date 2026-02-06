@@ -39,11 +39,13 @@ async handleMessage(senderId, message) {
             // Créer un nouvel utilisateur avec un pseudo par défaut
             user = await User.create({
                 facebookId: senderId,
-                pseudo: 'Anonyme', // ✅ Ajouter un pseudo par défaut
+                pseudo: 'Anonyme',
                 createdAt: new Date(),
                 lastActivity: new Date(),
                 status: 'online',
-                isBlocked: false
+                isBlocked: false,
+                totalConversations: 0,
+                totalMessages: 0
             });
             
             await this.sendWelcomeMessage(senderId);
@@ -66,25 +68,19 @@ async handleMessage(senderId, message) {
             
             // Mettre à jour le statut si nécessaire
             if (user.status !== 'blocked') {
-                await User.findOneAndUpdate(
-                    { facebookId: senderId },
-                    { status: 'blocked' }
-                );
+                user.status = 'blocked';
+                await user.save();
             }
             
             return; // STOP - Ne pas continuer
         }
 
         // Mettre à jour l'activité SEULEMENT si pas bloqué
-        await User.findOneAndUpdate(
-            { facebookId: senderId },
-            { 
-                lastActivity: new Date(),
-                status: 'online'
-            }
-        );
+        user.lastActivity = new Date();
+        user.status = 'online';
+        await user.save();
 
-        // Suite du traitement pour les utilisateurs non bloqués...
+        // Extraire le texte du message
         const text = message.text?.toLowerCase().trim();
 
         // Traiter les commandes
@@ -93,13 +89,52 @@ async handleMessage(senderId, message) {
             return;
         }
 
-        // Si en conversation, transférer le message
+        // Si en conversation, traiter selon le type de message
         if (this.chatManager.isInChat(senderId)) {
+            // Récupérer les infos du chat actif
+            const chatInfo = this.chatManager.activeChats.get(senderId);
+            
+            if (chatInfo && chatInfo.chatId) {
+                // Déterminer le type de message et le stocker
+                if (message.text) {
+                    // Message texte
+                    await this.storeMessage(chatInfo.chatId, senderId, user.pseudo, chatInfo.partnerId, {
+                        content: message.text,
+                        type: 'text'
+                    });
+                    
+                } else if (message.attachments && message.attachments.length > 0) {
+                    // Pièces jointes (images, vidéos, etc.)
+                    for (const attachment of message.attachments) {
+                        const mediaType = attachment.type;
+                        const mediaUrl = attachment.payload?.url;
+                        
+                        await this.storeMessage(chatInfo.chatId, senderId, user.pseudo, chatInfo.partnerId, {
+                            content: `[${mediaType}]`,
+                            type: mediaType,
+                            mediaUrl: mediaUrl
+                        });
+                    }
+                    
+                } else if (message.sticker_id) {
+                    // Sticker
+                    await this.storeMessage(chatInfo.chatId, senderId, user.pseudo, chatInfo.partnerId, {
+                        content: '[Sticker]',
+                        type: 'sticker',
+                        mediaUrl: message.sticker_id
+                    });
+                }
+                
+                // Mettre à jour les stats du chat
+                await this.updateChatStats(chatInfo.chatId);
+            }
+            
+            // Transférer le message au partenaire
             await this.chatManager.relayMessage(senderId, message);
             return;
         }
 
-        // Sinon, afficher l'aide
+        // Si pas en conversation et pas une commande, afficher l'aide
         await this.showHelp(senderId);
 
     } catch (error) {
@@ -108,6 +143,80 @@ async handleMessage(senderId, message) {
             "❌ Une erreur s'est produite. Veuillez réessayer.\n\n" +
             "Tapez /help pour voir les commandes disponibles."
         );
+    }
+}
+
+// Nouvelle méthode pour stocker les messages dans la collection séparée
+async storeMessage(chatId, senderId, senderPseudo, recipientId, messageData) {
+    try {
+        const { Message } = require('../models');
+        
+        await Message.create({
+            chatId: chatId,
+            senderId: senderId,
+            senderPseudo: senderPseudo || 'Anonyme',
+            recipientId: recipientId,
+            content: messageData.content,
+            type: messageData.type || 'text',
+            mediaUrl: messageData.mediaUrl || null,
+            timestamp: new Date()
+        });
+        
+        console.log(`📝 Message stocké - Type: ${messageData.type}, Chat: ${chatId}`);
+        
+    } catch (error) {
+        console.error('Erreur stockage message:', error);
+    }
+}
+
+// Nouvelle méthode pour mettre à jour les stats du chat
+async updateChatStats(chatId) {
+    try {
+        const { Chat } = require('../models');
+        
+        await Chat.findByIdAndUpdate(chatId, {
+            $inc: { messageCount: 1 },
+            lastActivity: new Date()
+        });
+        
+    } catch (error) {
+        console.error('Erreur mise à jour stats chat:', error);
+    }
+}
+
+// Méthode optionnelle pour récupérer l'historique des messages
+async getChatHistory(chatId, limit = 50) {
+    try {
+        const { Message } = require('../models');
+        
+        const messages = await Message.find({ chatId })
+            .sort({ timestamp: -1 })
+            .limit(limit)
+            .lean();
+        
+        return messages.reverse(); // Remettre dans l'ordre chronologique
+        
+    } catch (error) {
+        console.error('Erreur récupération historique:', error);
+        return [];
+    }
+}
+
+// Méthode pour nettoyer les vieux messages (à appeler périodiquement)
+async cleanOldMessages(daysToKeep = 30) {
+    try {
+        const { Message } = require('../models');
+        
+        const cutoffDate = new Date(Date.now() - daysToKeep * 24 * 60 * 60 * 1000);
+        
+        const result = await Message.deleteMany({
+            timestamp: { $lt: cutoffDate }
+        });
+        
+        console.log(`🗑️ ${result.deletedCount} messages de plus de ${daysToKeep} jours supprimés`);
+        
+    } catch (error) {
+        console.error('Erreur nettoyage messages:', error);
     }
 }
 
