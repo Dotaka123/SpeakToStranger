@@ -101,5 +101,6 @@ const Queue = mongoose.model('Queue', queueSchema);
 const Report = mongoose.model('Report', reportSchema);
 const Stats = mongoose.model('Stats', statsSchema);
 const Message = require('./Message');
+const Feedback = require('./Feedback');
 
-module.exports = { User, Chat, Queue, Report, Stats, Message };
+module.exports = { User, Chat, Queue, Report, Stats, Message, Feedback };
