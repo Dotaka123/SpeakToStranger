@@ -17,11 +17,6 @@ const ChatManager = require('./handlers/chatManager');
 const UserManager = require('./handlers/userManager');
 const MessageHandler = require('./handlers/messageHandler');
 
-// Création des instances dans le bon ordre
-const userManager = new UserManager();
-const chatManager = new ChatManager();
-const messageHandler = new MessageHandler(chatManager, userManager);
-
 // Démarrer le nettoyage automatique
 chatManager.startAutoCleanup();
 
