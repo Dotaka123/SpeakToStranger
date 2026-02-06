@@ -1521,6 +1521,167 @@ app.get('/admin/reports-simple', async (req, res) => {
 });
 
 // ========================================
+// ROUTES API POUR LA GESTION DES CHATS
+// ========================================
+
+// Route pour voir les détails d'un chat
+app.get('/admin/chat/:chatId/details', async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const { Chat } = require('./models');
+        
+        const chat = await Chat.findById(chatId).lean();
+        
+        if (!chat) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Conversation non trouvée' 
+            });
+        }
+        
+        res.json({
+            success: true,
+            chat: {
+                id: chat._id,
+                participants: chat.participants,
+                messageCount: chat.messageCount || 0,
+                messages: chat.messages || [],
+                startTime: chat.startTime,
+                isActive: chat.isActive
+            }
+        });
+    } catch (error) {
+        console.error('Erreur détails chat:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Route pour avertir les utilisateurs d'un chat
+app.post('/admin/chat/:chatId/warn', async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const { Chat } = require('./models');
+        
+        const chat = await Chat.findById(chatId).lean();
+        
+        if (!chat || !chat.participants) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Conversation non trouvée' 
+            });
+        }
+        
+        // Message d'avertissement
+        const warningMessage = `⚠️ AVERTISSEMENT MODÉRATION ⚠️
+
+Votre conversation a été signalée pour comportement inapproprié.
+
+Merci de respecter les règles :
+• Soyez respectueux
+• Pas de contenu offensant
+• Pas de harcèlement
+
+En cas de récidive, votre compte pourrait être suspendu.
+
+L'équipe SpeakToStranger 🎭`;
+        
+        // Envoyer l'avertissement aux deux participants
+        let successCount = 0;
+        for (const participant of chat.participants) {
+            if (participant.userId) {
+                try {
+                    await sendMessageToUser(participant.userId, warningMessage);
+                    successCount++;
+                } catch (err) {
+                    console.error(`Erreur envoi avertissement à ${participant.userId}:`, err);
+                }
+            }
+        }
+        
+        res.json({ 
+            success: true, 
+            message: `Avertissement envoyé à ${successCount} participant(s)` 
+        });
+        
+    } catch (error) {
+        console.error('Erreur avertissement chat:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Route pour terminer un chat
+app.post('/admin/chat/:chatId/end', async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const { Chat } = require('./models');
+        
+        const chat = await Chat.findById(chatId);
+        
+        if (!chat) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Conversation non trouvée' 
+            });
+        }
+        
+        // Message de fin forcée
+        const endMessage = `🛑 CONVERSATION TERMINÉE PAR L'ADMINISTRATION
+
+Cette conversation a été terminée par un modérateur.
+
+Tapez /start pour commencer une nouvelle conversation.
+
+L'équipe SpeakToStranger 🎭`;
+        
+        // Envoyer le message aux participants
+        if (chat.participants) {
+            for (const participant of chat.participants) {
+                if (participant.userId) {
+                    try {
+                        await sendMessageToUser(participant.userId, endMessage);
+                    } catch (err) {
+                        console.error(`Erreur envoi message à ${participant.userId}:`, err);
+                    }
+                }
+            }
+        }
+        
+        // Marquer le chat comme terminé
+        chat.isActive = false;
+        chat.endTime = new Date();
+        chat.endedBy = 'admin';
+        await chat.save();
+        
+        // Terminer via le chatManager si disponible
+        if (chatManager && chat.participants) {
+            for (const participant of chat.participants) {
+                if (participant.userId && chatManager.isInChat(participant.userId)) {
+                    await chatManager.endChat(participant.userId, 'admin_force');
+                }
+            }
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Conversation terminée avec succès' 
+        });
+        
+    } catch (error) {
+        console.error('Erreur fin chat:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// ========================================
 // ROUTE DES CONVERSATIONS ACTIVES
 // ========================================
 app.get('/admin/chats-simple', async (req, res) => {
