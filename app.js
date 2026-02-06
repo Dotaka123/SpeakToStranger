@@ -735,46 +735,6 @@ L'équipe SpeakToStranger 🎭`;
     }
 });
 
-// Route pour bloquer un utilisateur avec notification
-app.post('/admin/user/:userId/block', async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const { reason } = req.body;
-        
-        // Message de blocage
-        const blockMessage = `🚫 COMPTE SUSPENDU 🚫
-
-Votre compte a été suspendu de SpeakToStranger.
-
-${reason ? `Raison: ${reason}` : 'Violation grave des conditions d'utilisation.'}
-
-Cette décision est définitive.
-
-Si vous pensez qu'il s'agit d'une erreur, contactez le support.
-
-L'équipe SpeakToStranger`;
-
-        // Envoyer le message
-        await sendMessageToUser(userId, blockMessage);
-        
-        // Bloquer dans la base de données
-        const { User } = require('./models');
-        await User.findOneAndUpdate(
-            { facebookId: userId },
-            { 
-                isBlocked: true,
-                blockedAt: new Date(),
-                blockReason: reason || 'Violation des conditions d\'utilisation'
-            }
-        );
-        
-        res.json({ success: true, message: 'Utilisateur bloqué et notifié' });
-    } catch (error) {
-        console.error('Erreur blocage:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
 // Route pour envoyer un message personnalisé
 app.post('/admin/user/:userId/message', async (req, res) => {
     try {
