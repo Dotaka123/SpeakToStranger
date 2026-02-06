@@ -66,30 +66,39 @@ async function generateUniquePseudo() {
     }
 
     // Gérer les messages entrants
-    async handleMessage(senderId, message) {
-        try {
-            // Marquer comme vu
-            await this.fb.markSeen(senderId);
+// Dans handleMessage() de messageHandler.js
+async handleMessage(senderId, message) {
+    try {
+        // Marquer comme vu
+        await this.fb.markSeen(senderId);
+        
+        // Vérifier/récupérer l'utilisateur
+        let user = await User.findOne({ facebookId: senderId });
+        
+        if (!user) {
+            // GÉNÉRER UN PSEUDO ALÉATOIRE UNIQUE
+            const randomPseudo = await generateUniquePseudo();
             
-            // Vérifier/récupérer l'utilisateur
-            let user = await User.findOne({ facebookId: senderId });
+            // Créer un nouvel utilisateur avec un pseudo unique
+            user = await User.create({
+                facebookId: senderId,
+                pseudo: randomPseudo, // <-- Pseudo unique au lieu de 'Anonyme'
+                createdAt: new Date(),
+                lastActivity: new Date(),
+                status: 'online',
+                isBlocked: false,
+                totalConversations: 0,
+                totalMessages: 0
+            });
             
-            if (!user) {
-                // Créer un nouvel utilisateur avec un pseudo par défaut
-                user = await User.create({
-                    facebookId: senderId,
-                    pseudo: 'Anonyme',
-                    createdAt: new Date(),
-                    lastActivity: new Date(),
-                    status: 'online',
-                    isBlocked: false,
-                    totalConversations: 0,
-                    totalMessages: 0
-                });
-                
-                await this.sendWelcomeMessage(senderId);
-                return;
-            }
+            console.log(`🆕 Nouvel utilisateur créé: ${randomPseudo} (${senderId})`);
+            
+            // Message de bienvenue personnalisé avec le pseudo
+            await this.sendWelcomeMessageWithPseudo(senderId, randomPseudo);
+            return;
+        }
+        
+        // ... reste du code
 
             // VÉRIFICATION DU BLOCAGE
             if (user.isBlocked === true) {
@@ -282,25 +291,26 @@ async function generateUniquePseudo() {
         }
     }
 
-    // Message de bienvenue
-    async sendWelcomeMessage(senderId) {
-        const welcomeMessage = 
-            "🎭 Bienvenue sur SpeakToStranger !\n\n" +
-            "Je suis votre assistant pour vous connecter avec des inconnus.\n\n" +
-            "📝 COMMANDES DISPONIBLES :\n" +
-            "━━━━━━━━━━━━━━━━━━\n" +
-            "/chercher - 🔍 Trouver un partenaire\n" +
-            "/stop - 🛑 Quitter la conversation\n" +
-            "/pseudo - ✏️ Changer votre pseudo\n" +
-            "/profil - 👤 Voir votre profil\n" +
-            "/stats - 📊 Voir vos statistiques\n" +
-            "/infos - 📈 Statistiques du bot\n" +
-            "/signaler - 🚨 Signaler un utilisateur\n" +
-            "/help - ❓ Afficher cette aide\n\n" +
-            "🎯 Commencez par taper /chercher pour trouver quelqu'un !";
+// Nouveau message de bienvenue avec pseudo
+async sendWelcomeMessageWithPseudo(senderId, pseudo) {
+    const welcomeMessage = 
+        "🎭 Bienvenue sur SpeakToStranger !\n" +
+        "━━━━━━━━━━━━━━━━━━\n\n" +
+        `✨ Votre pseudo : ${pseudo}\n\n` +
+        "💡 Vous pouvez le changer avec :\n" +
+        "/pseudo NouveauNom\n\n" +
+        "📝 COMMANDES DISPONIBLES :\n" +
+        "━━━━━━━━━━━━━━━━━━\n" +
+        "/chercher - 🔍 Trouver un partenaire\n" +
+        "/stop - 🛑 Quitter la conversation\n" +
+        "/pseudo - ✏️ Changer votre pseudo\n" +
+        "/profil - 👤 Voir votre profil\n" +
+        "/stats - 📊 Voir vos statistiques\n" +
+        "/help - ❓ Afficher l'aide\n\n" +
+        "🎯 Tapez /chercher pour rencontrer quelqu'un !";
 
-        await this.fb.sendTextMessage(senderId, welcomeMessage);
-    }
+    await this.fb.sendTextMessage(senderId, welcomeMessage);
+}
 
     // Afficher l'aide
     async showHelp(senderId) {
