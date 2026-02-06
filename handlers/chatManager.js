@@ -262,7 +262,7 @@ async handleMessage(senderId, message) {
     }
 }
 
-// Transférer un message entre partenaires
+// Transférer un message entre partenaires (VERSION AMÉLIORÉE)
 async relayMessage(senderId, message) {
     const chat = this.activeChats.get(senderId);
     if (!chat) {
@@ -274,60 +274,142 @@ async relayMessage(senderId, message) {
     }
 
     try {
-        // Stocker le message dans l'historique
-        if (message.text) {
-            await this.handleMessage(senderId, message.text);
-        }
+        // Récupérer le pseudo de l'expéditeur
+        const senderPseudo = await this.getUserPseudo(senderId);
         
-        // Mettre à jour les stats utilisateur
+        // Traiter selon le type de message
+        if (message.text) {
+            // MESSAGE TEXTE
+            await this.handleMessage(senderId, message.text);
+            
+            // Format du message pour le destinataire
+            const formattedMessage = `${senderPseudo}: ${message.text}`;
+            await this.fb.sendTextMessage(chat.partnerId, formattedMessage);
+            
+        } else if (message.attachments && message.attachments.length > 0) {
+            // PIÈCES JOINTES (images, vidéos, audio, fichiers)
+            for (const attachment of message.attachments) {
+                const attachmentType = attachment.type;
+                const payload = attachment.payload;
+                
+                // Notifier d'abord que quelque chose arrive
+                let notification = `${senderPseudo} envoie `;
+                switch(attachmentType) {
+                    case 'image':
+                        notification += 'une photo... 📷';
+                        break;
+                    case 'video':
+                        notification += 'une vidéo... 🎥';
+                        break;
+                    case 'audio':
+                        notification += 'un message vocal... 🎵';
+                        break;
+                    case 'file':
+                        notification += 'un fichier... 📎';
+                        break;
+                    default:
+                        notification += 'quelque chose... 📎';
+                }
+                
+                await this.fb.sendTextMessage(chat.partnerId, notification);
+                
+                // Transférer la pièce jointe
+                try {
+                    if (attachmentType === 'image' && payload.url) {
+                        // TRANSFÉRER L'IMAGE
+                        await this.fb.sendImageMessage(chat.partnerId, payload.url);
+                        await this.handleMessage(senderId, '[Photo envoyée]');
+                        
+                    } else if (attachmentType === 'video' && payload.url) {
+                        // TRANSFÉRER LA VIDÉO
+                        await this.fb.sendVideoMessage(chat.partnerId, payload.url);
+                        await this.handleMessage(senderId, '[Vidéo envoyée]');
+                        
+                    } else if (attachmentType === 'audio' && payload.url) {
+                        // TRANSFÉRER L'AUDIO
+                        await this.fb.sendAudioMessage(chat.partnerId, payload.url);
+                        await this.handleMessage(senderId, '[Message vocal envoyé]');
+                        
+                    } else if (attachmentType === 'file' && payload.url) {
+                        // TRANSFÉRER LE FICHIER
+                        await this.fb.sendFileMessage(chat.partnerId, payload.url);
+                        await this.handleMessage(senderId, '[Fichier envoyé]');
+                        
+                    } else if (attachmentType === 'location') {
+                        // TRANSFÉRER LA LOCALISATION
+                        const coords = payload.coordinates;
+                        if (coords) {
+                            await this.fb.sendLocationMessage(
+                                chat.partnerId, 
+                                coords.lat, 
+                                coords.long
+                            );
+                            await this.handleMessage(senderId, '[Localisation partagée]');
+                        }
+                    } else {
+                        // Type non supporté - envoyer juste une notification
+                        await this.fb.sendTextMessage(chat.partnerId, 
+                            `${senderPseudo} a envoyé un(e) ${attachmentType} (non transférable)`
+                        );
+                    }
+                } catch (attachError) {
+                    console.error('Erreur transfert pièce jointe:', attachError);
+                    await this.fb.sendTextMessage(chat.partnerId, 
+                        `⚠️ ${senderPseudo} a essayé d'envoyer un(e) ${attachmentType}, mais le transfert a échoué.`
+                    );
+                }
+            }
+            
+        } else if (message.sticker_id) {
+            // STICKERS
+            await this.handleMessage(senderId, '[Sticker]');
+            
+            // Essayer de transférer le sticker
+            try {
+                await this.fb.sendStickerMessage(chat.partnerId, message.sticker_id);
+            } catch (stickerError) {
+                // Si le sticker ne peut pas être transféré, envoyer une notification
+                await this.fb.sendTextMessage(chat.partnerId, 
+                    `😊 ${senderPseudo} a envoyé un sticker !`
+                );
+            }
+            
+        } else if (message.quick_reply) {
+            // RÉPONSES RAPIDES
+            const replyText = message.quick_reply.payload;
+            await this.handleMessage(senderId, replyText);
+            await this.fb.sendTextMessage(chat.partnerId, 
+                `${senderPseudo}: ${replyText}`
+            );
+        }
+
+        // Mettre à jour les stats
         await User.findOneAndUpdate(
             { facebookId: senderId },
             { $inc: { totalMessages: 1 } }
         );
 
-        // Transférer le message
-        if (message.text) {
-            // Message texte simple
-            const relayedMessage = `💬 ${chat.partnerPseudo}: ${message.text}`;
-            await this.fb.sendTextMessage(chat.partnerId, relayedMessage);
-        } else if (message.attachments) {
-            // Gérer les pièces jointes
-            const attachmentType = message.attachments[0].type;
-            let notification = '';
-            
-            switch(attachmentType) {
-                case 'image':
-                    notification = `📷 ${chat.partnerPseudo} a envoyé une image`;
-                    break;
-                case 'video':
-                    notification = `🎥 ${chat.partnerPseudo} a envoyé une vidéo`;
-                    break;
-                case 'audio':
-                    notification = `🎵 ${chat.partnerPseudo} a envoyé un audio`;
-                    break;
-                case 'file':
-                    notification = `📎 ${chat.partnerPseudo} a envoyé un fichier`;
-                    break;
-                default:
-                    notification = `📎 ${chat.partnerPseudo} a envoyé une pièce jointe`;
-            }
-            
-            // Stocker aussi la notification de pièce jointe
-            await this.handleMessage(senderId, `[${attachmentType}]`);
-            
-            await this.fb.sendTextMessage(chat.partnerId, notification);
-        } else if (message.sticker_id) {
-            await this.handleMessage(senderId, '[sticker]');
-            await this.fb.sendTextMessage(chat.partnerId, 
-                `😊 ${chat.partnerPseudo} a envoyé un sticker`
-            );
-        }
-
         return true;
 
     } catch (error) {
         console.error('Erreur transfert message:', error);
+        
+        // Notifier l'expéditeur si erreur
+        await this.fb.sendTextMessage(senderId, 
+            "⚠️ Erreur lors de l'envoi du message. Veuillez réessayer."
+        );
+        
         return false;
+    }
+}
+
+// Fonction helper pour récupérer le pseudo
+async getUserPseudo(userId) {
+    try {
+        const user = await User.findOne({ facebookId: userId });
+        return user?.pseudo || 'Anonyme';
+    } catch (error) {
+        return 'Anonyme';
     }
 }
 
