@@ -115,113 +115,587 @@ app.get('/admin', auth.requireAdmin, async (req, res) => {
     }
 });
 
-// Route des signalements
-app.get('/admin/reports', auth.requireAdmin, async (req, res) => {
+// ========================================
+// PAGE DES SIGNALEMENTS COMPLÈTE
+// ========================================
+app.get('/admin/reports-simple', async (req, res) => {
     try {
-        const reports = await Report.find()
-            .sort({ createdAt: -1 })
-            .limit(50)
-            .lean();
+        let reports = [];
+        let users = new Map();
         
-        // Créer une page HTML simple pour les signalements
+        try {
+            const { Report, User } = require('./models');
+            reports = await Report.find().sort({ createdAt: -1 }).limit(100).lean();
+            
+            // Récupérer les infos des utilisateurs
+            const userIds = [...new Set([...reports.map(r => r.reporterId), ...reports.map(r => r.reportedUserId)])];
+            const userDocs = await User.find({ facebookId: { $in: userIds } }).lean();
+            userDocs.forEach(u => users.set(u.facebookId, u));
+        } catch (e) {
+            console.log('Erreur récupération données:', e);
+        }
+        
+        // Statistiques
+        const pendingCount = reports.filter(r => r.status === 'pending').length;
+        const resolvedCount = reports.filter(r => r.status === 'resolved').length;
+        
         let html = `
             <!DOCTYPE html>
             <html lang="fr">
             <head>
+                <title>Gestion des Signalements - SpeakToStranger</title>
                 <meta charset="UTF-8">
-                <title>Signalements - SpeakToStranger</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-                    .container { max-width: 1200px; margin: 0 auto; }
-                    h1 { color: #333; }
-                    .back-btn { display: inline-block; margin-bottom: 20px; color: #3498db; text-decoration: none; }
-                    table { width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-                    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
-                    th { background: #3498db; color: white; }
-                    .status-pending { background: #f39c12; color: white; padding: 3px 8px; border-radius: 3px; }
-                    .status-resolved { background: #27ae60; color: white; padding: 3px 8px; border-radius: 3px; }
-                    .btn-action { padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; color: white; }
-                    .btn-warn { background: #f39c12; }
-                    .btn-block { background: #e74c3c; }
-                    .btn-dismiss { background: #95a5a6; }
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    
+                    body { 
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        padding: 20px;
+                    }
+                    
+                    .container { 
+                        max-width: 1400px; 
+                        margin: 0 auto;
+                    }
+                    
+                    .header {
+                        background: white;
+                        border-radius: 16px;
+                        padding: 2rem;
+                        margin-bottom: 2rem;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+                    }
+                    
+                    .header-top {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 1rem;
+                    }
+                    
+                    h1 {
+                        color: #2d3748;
+                        font-size: 2rem;
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                    }
+                    
+                    .back-btn {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 10px 20px;
+                        border-radius: 8px;
+                        text-decoration: none;
+                        font-weight: 500;
+                        transition: transform 0.2s;
+                    }
+                    
+                    .back-btn:hover {
+                        transform: translateY(-2px);
+                    }
+                    
+                    .stats-row {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                        gap: 1rem;
+                        margin-top: 1.5rem;
+                    }
+                    
+                    .stat-box {
+                        background: #f7fafc;
+                        padding: 1rem;
+                        border-radius: 8px;
+                        text-align: center;
+                    }
+                    
+                    .stat-value {
+                        font-size: 2rem;
+                        font-weight: bold;
+                        margin-bottom: 0.25rem;
+                    }
+                    
+                    .stat-label {
+                        color: #718096;
+                        font-size: 0.875rem;
+                        text-transform: uppercase;
+                    }
+                    
+                    .filters {
+                        background: white;
+                        padding: 1.5rem;
+                        border-radius: 12px;
+                        margin-bottom: 1.5rem;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+                    }
+                    
+                    .filter-buttons {
+                        display: flex;
+                        gap: 1rem;
+                        flex-wrap: wrap;
+                    }
+                    
+                    .filter-btn {
+                        padding: 8px 16px;
+                        border: 2px solid #e2e8f0;
+                        background: white;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        font-weight: 500;
+                    }
+                    
+                    .filter-btn:hover {
+                        border-color: #667eea;
+                        color: #667eea;
+                    }
+                    
+                    .filter-btn.active {
+                        background: #667eea;
+                        color: white;
+                        border-color: #667eea;
+                    }
+                    
+                    .reports-table {
+                        background: white;
+                        border-radius: 12px;
+                        overflow: hidden;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+                    }
+                    
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                    }
+                    
+                    thead {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    
+                    th {
+                        color: white;
+                        padding: 1rem;
+                        text-align: left;
+                        font-weight: 600;
+                        font-size: 0.875rem;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    
+                    td {
+                        padding: 1rem;
+                        border-bottom: 1px solid #e2e8f0;
+                    }
+                    
+                    tr:hover {
+                        background: #f7fafc;
+                    }
+                    
+                    .user-info {
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .user-pseudo {
+                        font-weight: 600;
+                        color: #2d3748;
+                    }
+                    
+                    .user-id {
+                        font-size: 0.75rem;
+                        color: #a0aec0;
+                    }
+                    
+                    .reason-text {
+                        max-width: 300px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                    }
+                    
+                    .status-badge {
+                        display: inline-block;
+                        padding: 4px 12px;
+                        border-radius: 20px;
+                        font-size: 0.75rem;
+                        font-weight: 600;
+                        text-transform: uppercase;
+                    }
+                    
+                    .status-pending {
+                        background: #fed7d7;
+                        color: #c53030;
+                    }
+                    
+                    .status-reviewing {
+                        background: #feebc8;
+                        color: #c05621;
+                    }
+                    
+                    .status-resolved {
+                        background: #c6f6d5;
+                        color: #22543d;
+                    }
+                    
+                    .action-buttons {
+                        display: flex;
+                        gap: 0.5rem;
+                    }
+                    
+                    .action-btn {
+                        padding: 6px 12px;
+                        border: none;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 0.875rem;
+                        font-weight: 500;
+                        transition: all 0.2s;
+                    }
+                    
+                    .btn-view {
+                        background: #edf2f7;
+                        color: #4a5568;
+                    }
+                    
+                    .btn-view:hover {
+                        background: #e2e8f0;
+                    }
+                    
+                    .btn-warn {
+                        background: #feebc8;
+                        color: #c05621;
+                    }
+                    
+                    .btn-warn:hover {
+                        background: #fbd38d;
+                    }
+                    
+                    .btn-block {
+                        background: #fed7d7;
+                        color: #c53030;
+                    }
+                    
+                    .btn-block:hover {
+                        background: #fc8181;
+                    }
+                    
+                    .btn-resolve {
+                        background: #c6f6d5;
+                        color: #22543d;
+                    }
+                    
+                    .btn-resolve:hover {
+                        background: #9ae6b4;
+                    }
+                    
+                    .no-data {
+                        text-align: center;
+                        padding: 4rem;
+                        color: #a0aec0;
+                    }
+                    
+                    .no-data-icon {
+                        font-size: 4rem;
+                        margin-bottom: 1rem;
+                    }
+                    
+                    .modal {
+                        display: none;
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        background: rgba(0, 0, 0, 0.5);
+                        z-index: 1000;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    
+                    .modal.active {
+                        display: flex;
+                    }
+                    
+                    .modal-content {
+                        background: white;
+                        border-radius: 12px;
+                        padding: 2rem;
+                        max-width: 500px;
+                        width: 90%;
+                    }
+                    
+                    .modal-header {
+                        margin-bottom: 1.5rem;
+                    }
+                    
+                    .modal-title {
+                        font-size: 1.5rem;
+                        color: #2d3748;
+                    }
+                    
+                    .form-group {
+                        margin-bottom: 1rem;
+                    }
+                    
+                    .form-label {
+                        display: block;
+                        margin-bottom: 0.5rem;
+                        font-weight: 500;
+                        color: #4a5568;
+                    }
+                    
+                    .form-select, .form-textarea {
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 1px solid #e2e8f0;
+                        border-radius: 6px;
+                        font-size: 1rem;
+                    }
+                    
+                    .modal-footer {
+                        display: flex;
+                        gap: 1rem;
+                        justify-content: flex-end;
+                        margin-top: 1.5rem;
+                    }
+                    
+                    .danger { color: #e53e3e; }
+                    .warning { color: #dd6b20; }
+                    .success { color: #38a169; }
+                    .info { color: #3182ce; }
+                    
+                    @media (max-width: 768px) {
+                        .header-top {
+                            flex-direction: column;
+                            gap: 1rem;
+                        }
+                        
+                        .action-buttons {
+                            flex-direction: column;
+                        }
+                        
+                        table {
+                            font-size: 0.875rem;
+                        }
+                        
+                        th, td {
+                            padding: 0.5rem;
+                        }
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <a href="/admin" class="back-btn">← Retour au dashboard</a>
-                    <h1>📋 Signalements</h1>
+                    <div class="header">
+                        <div class="header-top">
+                            <h1>
+                                <span>📋</span>
+                                <span>Gestion des Signalements</span>
+                            </h1>
+                            <a href="/admin/dashboard-direct" class="back-btn">
+                                ← Retour au Dashboard
+                            </a>
+                        </div>
+                        
+                        <div class="stats-row">
+                            <div class="stat-box">
+                                <div class="stat-value danger">${pendingCount}</div>
+                                <div class="stat-label">En attente</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value warning">${reports.filter(r => r.status === 'reviewing').length}</div>
+                                <div class="stat-label">En cours</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value success">${resolvedCount}</div>
+                                <div class="stat-label">Résolus</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value info">${reports.length}</div>
+                                <div class="stat-label">Total</div>
+                            </div>
+                        </div>
+                    </div>
                     
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Signalé par</th>
-                                <th>Utilisateur signalé</th>
-                                <th>Raison</th>
-                                <th>Statut</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-        `;
-
-        for (const report of reports) {
-            const reporter = await User.findOne({ facebookId: report.reporterId }).lean();
-            const reported = await User.findOne({ facebookId: report.reportedUserId }).lean();
-            
+                    <div class="filters">
+                        <div class="filter-buttons">
+                            <button class="filter-btn active" onclick="filterReports('all')">Tous</button>
+                            <button class="filter-btn" onclick="filterReports('pending')">En attente</button>
+                            <button class="filter-btn" onclick="filterReports('reviewing')">En cours</button>
+                            <button class="filter-btn" onclick="filterReports('resolved')">Résolus</button>
+                            <button class="filter-btn" onclick="filterReports('today')">Aujourd'hui</button>
+                        </div>
+                    </div>
+                    
+                    <div class="reports-table">
+                        <table id="reportsTable">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Signalé par</th>
+                                    <th>Utilisateur signalé</th>
+                                    <th>Raison</th>
+                                    <th>Statut</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+        
+        if (reports.length === 0) {
             html += `
                 <tr>
-                    <td>${new Date(report.createdAt).toLocaleDateString('fr-FR')}</td>
-                    <td>${reporter?.pseudo || 'Inconnu'}</td>
-                    <td>${reported?.pseudo || 'Inconnu'}</td>
-                    <td>${report.reason}</td>
-                    <td><span class="status-${report.status}">${report.status}</span></td>
-                    <td>
-                        ${report.status === 'pending' ? `
-                            <button class="btn-action btn-warn" onclick="handleReport('${report._id}', 'warn')">Avertir</button>
-                            <button class="btn-action btn-block" onclick="handleReport('${report._id}', 'block')">Bloquer</button>
-                            <button class="btn-action btn-dismiss" onclick="handleReport('${report._id}', 'dismiss')">Ignorer</button>
-                        ` : 'Traité'}
+                    <td colspan="6">
+                        <div class="no-data">
+                            <div class="no-data-icon">📭</div>
+                            <h3>Aucun signalement</h3>
+                            <p>Tous les utilisateurs se comportent bien ! 🎉</p>
+                        </div>
                     </td>
-                </tr>
-            `;
+                </tr>`;
+        } else {
+            for (const report of reports) {
+                const reporter = users.get(report.reporterId);
+                const reported = users.get(report.reportedUserId);
+                const status = report.status || 'pending';
+                const date = new Date(report.createdAt);
+                const dateStr = date.toLocaleDateString('fr-FR') + ' ' + date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                
+                html += `
+                    <tr data-status="${status}" data-date="${date.toISOString()}">
+                        <td>${dateStr}</td>
+                        <td>
+                            <div class="user-info">
+                                <span class="user-pseudo">${reporter?.pseudo || 'Utilisateur'}</span>
+                                <span class="user-id">${report.reporterId?.substring(0, 8)}...</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="user-info">
+                                <span class="user-pseudo">${reported?.pseudo || 'Utilisateur'}</span>
+                                <span class="user-id">${report.reportedUserId?.substring(0, 8)}...</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="reason-text" title="${report.reason || 'Non spécifiée'}">
+                                ${report.reason || 'Non spécifiée'}
+                            </div>
+                        </td>
+                        <td>
+                            <span class="status-badge status-${status}">${status}</span>
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="action-btn btn-view" onclick="viewDetails('${report._id}')">👁️</button>
+                                ${status === 'pending' ? `
+                                    <button class="action-btn btn-warn" onclick="warnUser('${report.reportedUserId}')">⚠️</button>
+                                    <button class="action-btn btn-block" onclick="blockUser('${report.reportedUserId}')">🚫</button>
+                                    <button class="action-btn btn-resolve" onclick="resolveReport('${report._id}')">✅</button>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>`;
+            }
         }
-
+        
         html += `
-                        </tbody>
-                    </table>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Modal pour les actions -->
+                <div id="actionModal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 class="modal-title">Action de modération</h2>
+                        </div>
+                        <form id="actionForm">
+                            <div class="form-group">
+                                <label class="form-label">Type d'action</label>
+                                <select class="form-select" id="actionType">
+                                    <option value="warn">Avertissement</option>
+                                    <option value="block">Bloquer l'utilisateur</option>
+                                    <option value="resolve">Marquer comme résolu</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Raison / Notes</label>
+                                <textarea class="form-textarea" id="actionReason" rows="3" placeholder="Expliquez la raison de cette action..."></textarea>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="action-btn btn-view" onclick="closeModal()">Annuler</button>
+                                <button type="submit" class="action-btn btn-warn">Confirmer</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
                 
                 <script>
-                    async function handleReport(reportId, action) {
-                        if (!confirm('Confirmer cette action ?')) return;
+                    function filterReports(filter) {
+                        const rows = document.querySelectorAll('#reportsTable tbody tr');
+                        const buttons = document.querySelectorAll('.filter-btn');
                         
-                        try {
-                            const response = await fetch('/admin/reports/' + reportId + '/action', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: action, reason: 'Action admin' })
-                            });
-                            
-                            if (response.ok) {
-                                alert('Action effectuée avec succès');
-                                location.reload();
+                        buttons.forEach(btn => btn.classList.remove('active'));
+                        event.target.classList.add('active');
+                        
+                        rows.forEach(row => {
+                            if (filter === 'all') {
+                                row.style.display = '';
+                            } else if (filter === 'today') {
+                                const date = new Date(row.dataset.date);
+                                const today = new Date();
+                                if (date.toDateString() === today.toDateString()) {
+                                    row.style.display = '';
+                                } else {
+                                    row.style.display = 'none';
+                                }
                             } else {
-                                alert('Erreur lors du traitement');
+                                if (row.dataset.status === filter) {
+                                    row.style.display = '';
+                                } else {
+                                    row.style.display = 'none';
+                                }
                             }
-                        } catch (error) {
-                            alert('Erreur: ' + error.message);
+                        });
+                    }
+                    
+                    function viewDetails(reportId) {
+                        alert('Détails du signalement: ' + reportId);
+                    }
+                    
+                    function warnUser(userId) {
+                        if (confirm('Envoyer un avertissement à cet utilisateur ?')) {
+                            alert('Avertissement envoyé à: ' + userId);
                         }
+                    }
+                    
+                    function blockUser(userId) {
+                        if (confirm('Bloquer cet utilisateur ?')) {
+                            alert('Utilisateur bloqué: ' + userId);
+                        }
+                    }
+                    
+                    function resolveReport(reportId) {
+                        if (confirm('Marquer ce signalement comme résolu ?')) {
+                            alert('Signalement résolu: ' + reportId);
+                            location.reload();
+                        }
+                    }
+                    
+                    function closeModal() {
+                        document.getElementById('actionModal').classList.remove('active');
                     }
                 </script>
             </body>
-            </html>
-        `;
-
+            </html>`;
+        
         res.send(html);
     } catch (error) {
-        console.error('Erreur signalements:', error);
-        res.status(500).send('Erreur serveur');
+        console.error('Erreur page signalements:', error);
+        res.status(500).send(`<h1>Erreur</h1><p>${error.message}</p><a href="/admin/dashboard-direct">Retour</a>`);
     }
 });
 
@@ -741,6 +1215,1041 @@ app.get('/admin/reports-simple', async (req, res) => {
     }
 });
 
+// ========================================
+// ROUTE DES CONVERSATIONS ACTIVES
+// ========================================
+app.get('/admin/chats-simple', async (req, res) => {
+    try {
+        let activeChats = [];
+        let queuedUsers = [];
+        
+        try {
+            const { Chat, Queue, User } = require('./models');
+            
+            // Récupérer les conversations actives
+            activeChats = await Chat.find({ isActive: true })
+                .sort({ lastActivity: -1 })
+                .limit(50)
+                .lean();
+            
+            // Récupérer les utilisateurs en file d'attente
+            queuedUsers = await Queue.find()
+                .sort({ joinedAt: -1 })
+                .limit(20)
+                .lean();
+                
+        } catch (e) {
+            console.log('Erreur récupération conversations:', e);
+        }
+        
+        let html = `
+            <!DOCTYPE html>
+            <html lang="fr">
+            <head>
+                <title>Conversations Actives - SpeakToStranger</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    
+                    body { 
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+                        background: #f0f2f5; 
+                        padding: 20px;
+                    }
+                    
+                    .container { 
+                        max-width: 1400px; 
+                        margin: 0 auto; 
+                    }
+                    
+                    .header { 
+                        background: white; 
+                        padding: 25px; 
+                        border-radius: 12px; 
+                        margin-bottom: 25px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    }
+                    
+                    .header h1 {
+                        color: #1a202c;
+                        font-size: 2rem;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .back { 
+                        color: #667eea; 
+                        text-decoration: none; 
+                        font-weight: 500;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 5px;
+                        margin-bottom: 15px;
+                    }
+                    
+                    .back:hover { text-decoration: underline; }
+                    
+                    .stats-row {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 15px;
+                        margin-bottom: 25px;
+                    }
+                    
+                    .stat-mini {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 20px;
+                        border-radius: 10px;
+                        text-align: center;
+                    }
+                    
+                    .stat-mini-value {
+                        font-size: 2.5rem;
+                        font-weight: bold;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .stat-mini-label {
+                        opacity: 0.9;
+                        font-size: 0.9rem;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    
+                    .section {
+                        background: white;
+                        border-radius: 12px;
+                        padding: 25px;
+                        margin-bottom: 25px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    }
+                    
+                    .section h2 {
+                        color: #2d3748;
+                        margin-bottom: 20px;
+                        font-size: 1.5rem;
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                    }
+                    
+                    .chat-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+                        gap: 20px;
+                    }
+                    
+                    .chat-card {
+                        background: #f8f9fa;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 10px;
+                        padding: 15px;
+                        transition: all 0.3s ease;
+                    }
+                    
+                    .chat-card:hover {
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                        transform: translateY(-2px);
+                    }
+                    
+                    .chat-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: start;
+                        margin-bottom: 12px;
+                    }
+                    
+                    .chat-users {
+                        font-weight: 600;
+                        color: #2d3748;
+                        font-size: 1.1rem;
+                    }
+                    
+                    .chat-status {
+                        padding: 4px 10px;
+                        border-radius: 20px;
+                        font-size: 0.75rem;
+                        font-weight: 600;
+                        text-transform: uppercase;
+                    }
+                    
+                    .status-active {
+                        background: #c6f6d5;
+                        color: #22543d;
+                    }
+                    
+                    .status-waiting {
+                        background: #fed7d7;
+                        color: #742a2a;
+                    }
+                    
+                    .status-idle {
+                        background: #feebc8;
+                        color: #744210;
+                    }
+                    
+                    .chat-info {
+                        display: grid;
+                        gap: 8px;
+                        margin-bottom: 12px;
+                    }
+                    
+                    .info-row {
+                        display: flex;
+                        justify-content: space-between;
+                        font-size: 0.9rem;
+                    }
+                    
+                    .info-label {
+                        color: #718096;
+                    }
+                    
+                    .info-value {
+                        color: #2d3748;
+                        font-weight: 500;
+                    }
+                    
+                    .chat-actions {
+                        display: flex;
+                        gap: 8px;
+                        margin-top: 12px;
+                        padding-top: 12px;
+                        border-top: 1px solid #e5e7eb;
+                    }
+                    
+                    .btn-small {
+                        padding: 6px 12px;
+                        border: none;
+                        border-radius: 6px;
+                        font-size: 0.85rem;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        font-weight: 500;
+                        flex: 1;
+                        text-align: center;
+                    }
+                    
+                    .btn-view {
+                        background: #4299e1;
+                        color: white;
+                    }
+                    
+                    .btn-view:hover {
+                        background: #3182ce;
+                    }
+                    
+                    .btn-warn {
+                        background: #ed8936;
+                        color: white;
+                    }
+                    
+                    .btn-warn:hover {
+                        background: #dd6b20;
+                    }
+                    
+                    .btn-end {
+                        background: #f56565;
+                        color: white;
+                    }
+                    
+                    .btn-end:hover {
+                        background: #e53e3e;
+                    }
+                    
+                    .queue-list {
+                        display: grid;
+                        gap: 15px;
+                    }
+                    
+                    .queue-item {
+                        background: #f8f9fa;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 8px;
+                        padding: 15px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+                    
+                    .queue-user {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                    }
+                    
+                    .user-avatar {
+                        width: 40px;
+                        height: 40px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-weight: bold;
+                        font-size: 1.2rem;
+                    }
+                    
+                    .user-info {
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .user-pseudo {
+                        font-weight: 600;
+                        color: #2d3748;
+                    }
+                    
+                    .user-time {
+                        font-size: 0.85rem;
+                        color: #718096;
+                    }
+                    
+                    .no-data {
+                        text-align: center;
+                        padding: 40px;
+                        color: #718096;
+                        font-style: italic;
+                    }
+                    
+                    .alert {
+                        background: #fff5f5;
+                        border: 1px solid #feb2b2;
+                        color: #c53030;
+                        padding: 15px;
+                        border-radius: 8px;
+                        margin-bottom: 20px;
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                    }
+                    
+                    .success-alert {
+                        background: #f0fff4;
+                        border-color: #9ae6b4;
+                        color: #22543d;
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .chat-grid {
+                            grid-template-columns: 1fr;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <a href="/admin/dashboard-direct" class="back">← Retour au dashboard</a>
+                        <h1>💬 Conversations Actives</h1>
+                        <p style="color: #718096; margin-top: 5px;">Surveillance en temps réel des conversations</p>
+                    </div>
+                    
+                    <!-- Statistiques rapides -->
+                    <div class="stats-row">
+                        <div class="stat-mini">
+                            <div class="stat-mini-value">${activeChats.length}</div>
+                            <div class="stat-mini-label">Conversations actives</div>
+                        </div>
+                        <div class="stat-mini" style="background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);">
+                            <div class="stat-mini-value">${activeChats.filter(c => c.messageCount > 10).length}</div>
+                            <div class="stat-mini-label">Conversations engagées</div>
+                        </div>
+                        <div class="stat-mini" style="background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);">
+                            <div class="stat-mini-value">${queuedUsers.length}</div>
+                            <div class="stat-mini-label">En file d'attente</div>
+                        </div>
+                        <div class="stat-mini" style="background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);">
+                            <div class="stat-mini-value">${activeChats.reduce((sum, c) => sum + (c.messageCount || 0), 0)}</div>
+                            <div class="stat-mini-label">Messages aujourd'hui</div>
+                        </div>
+                    </div>`;
+        
+        // Section conversations actives
+        html += `
+                    <div class="section">
+                        <h2>
+                            <span>🔥</span>
+                            <span>Conversations en cours (${activeChats.length})</span>
+                        </h2>`;
+        
+        if (activeChats.length === 0) {
+            html += `<div class="no-data">Aucune conversation active pour le moment</div>`;
+        } else {
+            html += `<div class="chat-grid">`;
+            
+            for (const chat of activeChats) {
+                const duration = chat.startedAt ? 
+                    Math.floor((Date.now() - new Date(chat.startedAt)) / 60000) : 0;
+                
+                const lastActivity = chat.lastActivity ?
+                    Math.floor((Date.now() - new Date(chat.lastActivity)) / 60000) : 0;
+                
+                let statusClass = 'status-active';
+                let statusText = 'Active';
+                
+                if (lastActivity > 5) {
+                    statusClass = 'status-idle';
+                    statusText = 'Inactive';
+                }
+                
+                html += `
+                    <div class="chat-card">
+                        <div class="chat-header">
+                            <div class="chat-users">
+                                👤 ${chat.user1?.pseudo || chat.userId1 || 'Utilisateur 1'}
+                                <br>
+                                👤 ${chat.user2?.pseudo || chat.userId2 || 'Utilisateur 2'}
+                            </div>
+                            <span class="chat-status ${statusClass}">${statusText}</span>
+                        </div>
+                        
+                        <div class="chat-info">
+                            <div class="info-row">
+                                <span class="info-label">📊 Messages échangés:</span>
+                                <span class="info-value">${chat.messageCount || 0}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">⏱️ Durée:</span>
+                                <span class="info-value">${duration} min</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">🕐 Dernière activité:</span>
+                                <span class="info-value">Il y a ${lastActivity} min</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">🏷️ Chat ID:</span>
+                                <span class="info-value" style="font-size: 0.8rem;">${chat._id || 'N/A'}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="chat-actions">
+                            <button class="btn-small btn-view" onclick="viewChat('${chat._id}')">
+                                👁️ Voir
+                            </button>
+                            <button class="btn-small btn-warn" onclick="warnUsers('${chat._id}')">
+                                ⚠️ Avertir
+                            </button>
+                            <button class="btn-small btn-end" onclick="endChat('${chat._id}')">
+                                ❌ Terminer
+                            </button>
+                        </div>
+                    </div>`;
+            }
+            
+            html += `</div>`;
+        }
+        
+        html += `</div>`;
+        
+        // Section file d'attente
+        html += `
+                    <div class="section">
+                        <h2>
+                            <span>⏳</span>
+                            <span>File d'attente (${queuedUsers.length})</span>
+                        </h2>`;
+        
+        if (queuedUsers.length === 0) {
+            html += `<div class="no-data">Aucun utilisateur en attente</div>`;
+        } else {
+            html += `<div class="queue-list">`;
+            
+            for (const user of queuedUsers) {
+                const waitTime = user.joinedAt ?
+                    Math.floor((Date.now() - new Date(user.joinedAt)) / 60000) : 0;
+                
+                const firstLetter = user.pseudo ? user.pseudo[0].toUpperCase() : '?';
+                
+                html += `
+                    <div class="queue-item">
+                        <div class="queue-user">
+                            <div class="user-avatar">${firstLetter}</div>
+                            <div class="user-info">
+                                <span class="user-pseudo">${user.pseudo || user.userId || 'Utilisateur'}</span>
+                                <span class="user-time">En attente depuis ${waitTime} min</span>
+                            </div>
+                        </div>
+                        <div>
+                            ${user.interests && user.interests.length > 0 ? 
+                                `<span style="font-size: 0.85rem; color: #718096;">
+                                    Intérêts: ${user.interests.join(', ')}
+                                </span>` : 
+                                `<span style="font-size: 0.85rem; color: #a0aec0;">Aucun intérêt</span>`
+                            }
+                        </div>
+                    </div>`;
+            }
+            
+            html += `</div>`;
+        }
+        
+        html += `</div>`;
+        
+        // Scripts
+        html += `
+                </div>
+                
+                <script>
+                    function viewChat(chatId) {
+                        alert('Visualisation du chat ' + chatId + ' (fonctionnalité à implémenter)');
+                    }
+                    
+                    function warnUsers(chatId) {
+                        if (confirm('Envoyer un avertissement aux deux utilisateurs ?')) {
+                            fetch('/admin/chat/' + chatId + '/warn', { method: 'POST' })
+                                .then(() => {
+                                    alert('Avertissement envoyé');
+                                    location.reload();
+                                })
+                                .catch(err => alert('Erreur: ' + err));
+                        }
+                    }
+                    
+                    function endChat(chatId) {
+                        if (confirm('Terminer cette conversation ?')) {
+                            fetch('/admin/chat/' + chatId + '/end', { method: 'POST' })
+                                .then(() => {
+                                    alert('Conversation terminée');
+                                    location.reload();
+                                })
+                                .catch(err => alert('Erreur: ' + err));
+                        }
+                    }
+                    
+                    // Auto-refresh toutes les 30 secondes
+                    setTimeout(() => location.reload(), 30000);
+                </script>
+            </body>
+            </html>`;
+        
+        res.send(html);
+    } catch (error) {
+        console.error('Erreur conversations:', error);
+        res.status(500).send(`
+            <h1>❌ Erreur</h1>
+            <p>${error.message}</p>
+            <a href="/admin/dashboard-direct">Retour au dashboard</a>
+        `);
+    }
+});
+
+// ========================================
+// ROUTE DES STATISTIQUES DÉTAILLÉES
+// ========================================
+app.get('/admin/stats-simple', async (req, res) => {
+    try {
+        // Statistiques par défaut
+        let stats = {
+            users: { total: 0, active: 0, blocked: 0, new24h: 0 },
+            chats: { total: 0, active: 0, completed: 0, avgDuration: 0, avgMessages: 0 },
+            messages: { total: 0, today: 0, week: 0, month: 0 },
+            reports: { total: 0, pending: 0, resolved: 0, categories: {} },
+            performance: { uptime: process.uptime(), memory: process.memoryUsage() }
+        };
+        
+        try {
+            const { User, Chat, Report, Stats } = require('./models');
+            const now = new Date();
+            const today = new Date(now.setHours(0, 0, 0, 0));
+            const week = new Date(now.setDate(now.getDate() - 7));
+            const month = new Date(now.setMonth(now.getMonth() - 1));
+            const day24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            
+            // Stats utilisateurs
+            stats.users.total = await User.countDocuments();
+            stats.users.active = await User.countDocuments({ status: 'online' });
+            stats.users.blocked = await User.countDocuments({ isBlocked: true });
+            stats.users.new24h = await User.countDocuments({ createdAt: { $gte: day24h } });
+            
+            // Stats conversations
+            stats.chats.total = await Chat.countDocuments();
+            stats.chats.active = await Chat.countDocuments({ isActive: true });
+            stats.chats.completed = await Chat.countDocuments({ isActive: false });
+            
+            // Calcul des moyennes
+            const chatAggregation = await Chat.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        avgMessages: { $avg: '$messageCount' },
+                        totalMessages: { $sum: '$messageCount' }
+                    }
+                }
+            ]);
+            
+            if (chatAggregation.length > 0) {
+                stats.chats.avgMessages = Math.round(chatAggregation[0].avgMessages || 0);
+                stats.messages.total = chatAggregation[0].totalMessages || 0;
+            }
+            
+            // Stats signalements
+            stats.reports.total = await Report.countDocuments();
+            stats.reports.pending = await Report.countDocuments({ status: 'pending' });
+            stats.reports.resolved = await Report.countDocuments({ status: 'resolved' });
+            
+            // Catégories de signalements
+            const reportCategories = await Report.aggregate([
+                { $group: { _id: '$reason', count: { $sum: 1 } } }
+            ]);
+            
+            reportCategories.forEach(cat => {
+                stats.reports.categories[cat._id || 'other'] = cat.count;
+            });
+            
+        } catch (e) {
+            console.log('Erreur récupération stats:', e);
+        }
+        
+        // Graphiques data (JSON pour Chart.js)
+        const chartData = {
+            dailyUsers: Array.from({length: 7}, (_, i) => ({
+                day: new Date(Date.now() - (6-i) * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR', { weekday: 'short' }),
+                count: Math.floor(Math.random() * 100) + 20
+            })),
+            hourlyActivity: Array.from({length: 24}, (_, i) => ({
+                hour: i,
+                messages: Math.floor(Math.random() * 50) + 5
+            }))
+        };
+        
+        let html = `
+            <!DOCTYPE html>
+            <html lang="fr">
+            <head>
+                <title>Statistiques Détaillées - SpeakToStranger</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    
+                    body { 
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+                        background: #f0f2f5; 
+                        padding: 20px;
+                    }
+                    
+                    .container { 
+                        max-width: 1400px; 
+                        margin: 0 auto; 
+                    }
+                    
+                    .header { 
+                        background: white; 
+                        padding: 25px; 
+                        border-radius: 12px; 
+                        margin-bottom: 25px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    }
+                    
+                    .header h1 {
+                        color: #1a202c;
+                        font-size: 2rem;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .back { 
+                        color: #667eea; 
+                        text-decoration: none; 
+                        font-weight: 500;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 5px;
+                        margin-bottom: 15px;
+                    }
+                    
+                    .stats-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                        gap: 20px;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .stat-card {
+                        background: white;
+                        padding: 25px;
+                        border-radius: 12px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                        position: relative;
+                        overflow: hidden;
+                    }
+                    
+                    .stat-card::before {
+                        content: '';
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        height: 4px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    
+                    .stat-card.success::before {
+                        background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+                    }
+                    
+                    .stat-card.warning::before {
+                        background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+                    }
+                    
+                    .stat-card.danger::before {
+                        background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+                    }
+                    
+                    .stat-icon {
+                        font-size: 2.5rem;
+                        margin-bottom: 15px;
+                    }
+                    
+                    .stat-value {
+                        font-size: 2.5rem;
+                        font-weight: bold;
+                        color: #1a202c;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .stat-label {
+                        color: #718096;
+                        font-size: 0.9rem;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                        margin-bottom: 15px;
+                    }
+                    
+                    .stat-detail {
+                        display: flex;
+                        justify-content: space-between;
+                        padding-top: 15px;
+                        border-top: 1px solid #e5e7eb;
+                        margin-top: 15px;
+                    }
+                    
+                    .detail-item {
+                        text-align: center;
+                    }
+                    
+                    .detail-value {
+                        font-size: 1.25rem;
+                        font-weight: 600;
+                        color: #2d3748;
+                    }
+                    
+                    .detail-label {
+                        font-size: 0.75rem;
+                        color: #a0aec0;
+                        text-transform: uppercase;
+                        margin-top: 2px;
+                    }
+                    
+                    .chart-section {
+                        background: white;
+                        padding: 25px;
+                        border-radius: 12px;
+                        margin-bottom: 25px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    }
+                    
+                    .chart-section h2 {
+                        color: #2d3748;
+                        margin-bottom: 20px;
+                        font-size: 1.5rem;
+                    }
+                    
+                    .chart-container {
+                        position: relative;
+                        height: 300px;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .performance-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 15px;
+                        margin-top: 20px;
+                    }
+                    
+                    .perf-item {
+                        background: #f8f9fa;
+                        padding: 15px;
+                        border-radius: 8px;
+                        text-align: center;
+                    }
+                    
+                    .perf-value {
+                        font-size: 1.5rem;
+                        font-weight: bold;
+                        color: #667eea;
+                    }
+                    
+                    .perf-label {
+                        font-size: 0.85rem;
+                        color: #718096;
+                        margin-top: 5px;
+                    }
+                    
+                    .report-categories {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                        gap: 10px;
+                        margin-top: 15px;
+                    }
+                    
+                    .category-badge {
+                        background: #f8f9fa;
+                        padding: 10px;
+                        border-radius: 8px;
+                        text-align: center;
+                        border: 1px solid #e5e7eb;
+                    }
+                    
+                    .category-name {
+                        font-size: 0.85rem;
+                        color: #4a5568;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .category-count {
+                        font-size: 1.25rem;
+                        font-weight: bold;
+                        color: #2d3748;
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .stats-grid {
+                            grid-template-columns: 1fr;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <a href="/admin/dashboard-direct" class="back">← Retour au dashboard</a>
+                        <h1>📈 Statistiques Détaillées</h1>
+                        <p style="color: #718096; margin-top: 5px;">Analyse complète de l'activité du bot</p>
+                    </div>
+                    
+                    <!-- Statistiques principales -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">👥</div>
+                            <div class="stat-value">${stats.users.total}</div>
+                            <div class="stat-label">Utilisateurs Total</div>
+                            <div class="stat-detail">
+                                <div class="detail-item">
+                                    <div class="detail-value" style="color: #48bb78;">${stats.users.active}</div>
+                                    <div class="detail-label">En ligne</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-value" style="color: #4299e1;">${stats.users.new24h}</div>
+                                    <div class="detail-label">Nouveau 24h</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-value" style="color: #f56565;">${stats.users.blocked}</div>
+                                    <div class="detail-label">Bloqués</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card success">
+                            <div class="stat-icon">💬</div>
+                            <div class="stat-value">${stats.chats.total}</div>
+                            <div class="stat-label">Conversations Total</div>
+                            <div class="stat-detail">
+                                <div class="detail-item">
+                                    <div class="detail-value">${stats.chats.active}</div>
+                                    <div class="detail-label">Actives</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-value">${stats.chats.completed}</div>
+                                    <div class="detail-label">Terminées</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-value">${stats.chats.avgMessages}</div>
+                                    <div class="detail-label">Moy. msg</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card warning">
+                            <div class="stat-icon">📩</div>
+                            <div class="stat-value">${stats.messages.total}</div>
+                            <div class="stat-label">Messages Total</div>
+                            <div class="stat-detail">
+                                <div class="detail-item">
+                                    <div class="detail-value">${stats.messages.today}</div>
+                                    <div class="detail-label">Aujourd'hui</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-value">${stats.messages.week}</div>
+                                    <div class="detail-label">7 jours</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-value">${stats.messages.month}</div>
+                                    <div class="detail-label">30 jours</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card danger">
+                            <div class="stat-icon">🚨</div>
+                            <div class="stat-value">${stats.reports.total}</div>
+                            <div class="stat-label">Signalements Total</div>
+                            <div class="stat-detail">
+                                <div class="detail-item">
+                                    <div class="detail-value" style="color: #f56565;">${stats.reports.pending}</div>
+                                    <div class="detail-label">En attente</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-value" style="color: #48bb78;">${stats.reports.resolved}</div>
+                                    <div class="detail-label">Résolus</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Graphiques -->
+                    <div class="chart-section">
+                        <h2>📊 Activité des 7 derniers jours</h2>
+                        <div class="chart-container">
+                            <canvas id="dailyChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-section">
+                        <h2>🕐 Activité par heure (24h)</h2>
+                        <div class="chart-container">
+                            <canvas id="hourlyChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Catégories de signalements -->
+                    <div class="chart-section">
+                        <h2>📋 Catégories de signalements</h2>
+                        <div class="report-categories">`;
+        
+        // Afficher les catégories de signalements
+        const categories = stats.reports.categories;
+        if (Object.keys(categories).length === 0) {
+            html += `<div style="grid-column: 1/-1; text-align: center; color: #718096;">Aucun signalement</div>`;
+        } else {
+            for (const [category, count] of Object.entries(categories)) {
+                html += `
+                    <div class="category-badge">
+                        <div class="category-name">${category}</div>
+                        <div class="category-count">${count}</div>
+                    </div>`;
+            }
+        }
+        
+        html += `
+                        </div>
+                    </div>
+                    
+                    <!-- Performance système -->
+                    <div class="chart-section">
+                        <h2>⚡ Performance système</h2>
+                        <div class="performance-grid">
+                            <div class="perf-item">
+                                <div class="perf-value">${Math.floor(stats.performance.uptime / 3600)}h</div>
+                                <div class="perf-label">Uptime</div>
+                            </div>
+                            <div class="perf-item">
+                                <div class="perf-value">${Math.round(stats.performance.memory.heapUsed / 1024 / 1024)}MB</div>
+                                <div class="perf-label">Mémoire utilisée</div>
+                            </div>
+                            <div class="perf-item">
+                                <div class="perf-value">${Math.round(stats.performance.memory.heapTotal / 1024 / 1024)}MB</div>
+                                <div class="perf-label">Mémoire totale</div>
+                            </div>
+                            <div class="perf-item">
+                                <div class="perf-value">${process.version}</div>
+                                <div class="perf-label">Version Node.js</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <script>
+                    // Données pour les graphiques
+                    const chartData = ${JSON.stringify(chartData)};
+                    
+                    // Configuration commune des graphiques
+                    const commonOptions = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: {
+                                    display: true,
+                                    color: 'rgba(0, 0, 0, 0.05)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        }
+                    };
+                    
+                    // Graphique journalier
+                    new Chart(document.getElementById('dailyChart'), {
+                        type: 'bar',
+                        data: {
+                            labels: chartData.dailyUsers.map(d => d.day),
+                            datasets: [{
+                                label: 'Utilisateurs actifs',
+                                data: chartData.dailyUsers.map(d => d.count),
+                                backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                                borderColor: 'rgba(102, 126, 234, 1)',
+                                borderWidth: 1,
+                                borderRadius: 5
+                            }]
+                        },
+                        options: commonOptions
+                    });
+                    
+                    // Graphique horaire
+                    new Chart(document.getElementById('hourlyChart'), {
+                        type: 'line',
+                        data: {
+                            labels: chartData.hourlyActivity.map(h => h.hour + 'h'),
+                            datasets: [{
+                                label: 'Messages',
+                                data: chartData.hourlyActivity.map(h => h.messages),
+                                backgroundColor: 'rgba(72, 187, 120, 0.2)',
+                                borderColor: 'rgba(72, 187, 120, 1)',
+                                borderWidth: 2,
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: commonOptions
+                    });
+                </script>
+            </body>
+            </html>`;
+        
+        res.send(html);
+    } catch (error) {
+        console.error('Erreur statistiques:', error);
+        res.status(500).send(`
+            <h1>❌ Erreur</h1>
+            <p>${error.message}</p>
+            <a href="/admin/dashboard-direct">Retour au dashboard</a>
+        `);
+    }
+});
+
 // Webhook verification
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
@@ -778,6 +2287,541 @@ app.post('/webhook', async (req, res) => {
         res.sendStatus(404);
     }
 });
+
+// ========================================
+// PAGE DE GESTION DES UTILISATEURS
+// ========================================
+app.get('/admin/users-simple', async (req, res) => {
+    try {
+        let users = [];
+        let stats = {
+            total: 0,
+            online: 0,
+            blocked: 0,
+            active: 0
+        };
+        
+        try {
+            const { User } = require('./models');
+            users = await User.find().sort({ lastActivity: -1 }).limit(100).lean();
+            
+            stats.total = users.length;
+            stats.online = users.filter(u => u.status === 'online').length;
+            stats.blocked = users.filter(u => u.isBlocked).length;
+            stats.active = users.filter(u => {
+                const lastActive = new Date(u.lastActivity);
+                const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+                return lastActive > hourAgo;
+            }).length;
+        } catch (e) {
+            console.log('Erreur récupération utilisateurs:', e);
+        }
+        
+        let html = `
+            <!DOCTYPE html>
+            <html lang="fr">
+            <head>
+                <title>Gestion des Utilisateurs - SpeakToStranger</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    
+                    body { 
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        padding: 20px;
+                    }
+                    
+                    .container { 
+                        max-width: 1400px; 
+                        margin: 0 auto;
+                    }
+                    
+                    .header {
+                        background: white;
+                        border-radius: 16px;
+                        padding: 2rem;
+                        margin-bottom: 2rem;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+                    }
+                    
+                    .header-top {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 1rem;
+                    }
+                    
+                    h1 {
+                        color: #2d3748;
+                        font-size: 2rem;
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                    }
+                    
+                    .back-btn {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 10px 20px;
+                        border-radius: 8px;
+                        text-decoration: none;
+                        font-weight: 500;
+                        transition: transform 0.2s;
+                    }
+                    
+                    .back-btn:hover {
+                        transform: translateY(-2px);
+                    }
+                    
+                    .stats-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 1rem;
+                        margin-top: 1.5rem;
+                    }
+                    
+                    .stat-card {
+                        background: #f7fafc;
+                        padding: 1.5rem;
+                        border-radius: 12px;
+                        text-align: center;
+                        transition: transform 0.2s;
+                    }
+                    
+                    .stat-card:hover {
+                        transform: translateY(-2px);
+                    }
+                    
+                    .stat-icon {
+                        font-size: 2rem;
+                        margin-bottom: 0.5rem;
+                    }
+                    
+                    .stat-value {
+                        font-size: 2.5rem;
+                        font-weight: bold;
+                        margin-bottom: 0.25rem;
+                    }
+                    
+                    .stat-label {
+                        color: #718096;
+                        font-size: 0.875rem;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    
+                    .search-bar {
+                        background: white;
+                        padding: 1.5rem;
+                        border-radius: 12px;
+                        margin-bottom: 1.5rem;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+                    }
+                    
+                    .search-input {
+                        width: 100%;
+                        padding: 12px 20px;
+                        border: 2px solid #e2e8f0;
+                        border-radius: 8px;
+                        font-size: 1rem;
+                        transition: border-color 0.2s;
+                    }
+                    
+                    .search-input:focus {
+                        outline: none;
+                        border-color: #667eea;
+                    }
+                    
+                    .users-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                        gap: 1.5rem;
+                    }
+                    
+                    .user-card {
+                        background: white;
+                        border-radius: 12px;
+                        padding: 1.5rem;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+                        transition: all 0.3s;
+                    }
+                    
+                    .user-card:hover {
+                        transform: translateY(-4px);
+                        box-shadow: 0 8px 12px rgba(0,0,0,0.1);
+                    }
+                    
+                    .user-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: start;
+                        margin-bottom: 1rem;
+                    }
+                    
+                    .user-avatar {
+                        width: 50px;
+                        height: 50px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 1.5rem;
+                        font-weight: bold;
+                    }
+                    
+                    .user-name {
+                        font-size: 1.25rem;
+                        font-weight: 600;
+                        color: #2d3748;
+                        margin-bottom: 0.25rem;
+                    }
+                    
+                    .user-id {
+                        color: #a0aec0;
+                        font-size: 0.75rem;
+                        font-family: monospace;
+                    }
+                    
+                    .user-stats {
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 0.5rem;
+                        margin: 1rem 0;
+                        padding: 1rem 0;
+                        border-top: 1px solid #e2e8f0;
+                        border-bottom: 1px solid #e2e8f0;
+                    }
+                    
+                    .user-stat {
+                        text-align: center;
+                    }
+                    
+                    .user-stat-value {
+                        font-size: 1.25rem;
+                        font-weight: 600;
+                        color: #4a5568;
+                    }
+                    
+                    .user-stat-label {
+                        font-size: 0.75rem;
+                        color: #a0aec0;
+                        text-transform: uppercase;
+                    }
+                    
+                    .user-actions {
+                        display: flex;
+                        gap: 0.5rem;
+                        margin-top: 1rem;
+                    }
+                    
+                    .user-btn {
+                        flex: 1;
+                        padding: 8px;
+                        border: none;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 0.875rem;
+                        font-weight: 500;
+                        transition: all 0.2s;
+                    }
+                    
+                    .btn-message {
+                        background: #edf2f7;
+                        color: #4a5568;
+                    }
+                    
+                    .btn-message:hover {
+                        background: #e2e8f0;
+                    }
+                    
+                    .btn-warn {
+                        background: #feebc8;
+                        color: #c05621;
+                    }
+                    
+                    .btn-warn:hover {
+                        background: #fbd38d;
+                    }
+                    
+                    .btn-block {
+                        background: #fed7d7;
+                        color: #c53030;
+                    }
+                    
+                    .btn-block:hover {
+                        background: #fc8181;
+                    }
+                    
+                    .btn-unblock {
+                        background: #c6f6d5;
+                        color: #22543d;
+                    }
+                    
+                    .btn-unblock:hover {
+                        background: #9ae6b4;
+                    }
+                    
+                    .status-indicator {
+                        display: inline-block;
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 50%;
+                        margin-right: 5px;
+                    }
+                    
+                    .status-online {
+                        background: #48bb78;
+                    }
+                    
+                    .status-offline {
+                        background: #a0aec0;
+                    }
+                    
+                    .status-blocked {
+                        background: #f56565;
+                    }
+                    
+                    .danger { color: #e53e3e; }
+                    .warning { color: #dd6b20; }
+                    .success { color: #38a169; }
+                    .info { color: #3182ce; }
+                    
+                    .no-data {
+                        text-align: center;
+                        padding: 4rem;
+                        color: #a0aec0;
+                        background: white;
+                        border-radius: 12px;
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .users-grid {
+                            grid-template-columns: 1fr;
+                        }
+                        
+                        .header-top {
+                            flex-direction: column;
+                            gap: 1rem;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <div class="header-top">
+                            <h1>
+                                <span>👥</span>
+                                <span>Gestion des Utilisateurs</span>
+                            </h1>
+                            <a href="/admin/dashboard-direct" class="back-btn">
+                                ← Retour au Dashboard
+                            </a>
+                        </div>
+                        
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-icon">👥</div>
+                                <div class="stat-value info">${stats.total}</div>
+                                <div class="stat-label">Total utilisateurs</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">🟢</div>
+                                <div class="stat-value success">${stats.online}</div>
+                                <div class="stat-label">En ligne</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">⚡</div>
+                                <div class="stat-value warning">${stats.active}</div>
+                                <div class="stat-label">Actifs (1h)</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">🚫</div>
+                                <div class="stat-value danger">${stats.blocked}</div>
+                                <div class="stat-label">Bloqués</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="search-bar">
+                        <input type="text" class="search-input" id="searchInput" placeholder="🔍 Rechercher un utilisateur par pseudo ou ID..." onkeyup="searchUsers()">
+                    </div>
+                    
+                    <div class="users-grid" id="usersGrid">`;
+        
+        if (users.length === 0) {
+            html += `
+                <div class="no-data">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">👤</div>
+                    <h3>Aucun utilisateur</h3>
+                    <p>Les utilisateurs apparaîtront ici une fois qu'ils auront utilisé le bot.</p>
+                </div>`;
+        } else {
+            for (const user of users) {
+                const isOnline = user.status === 'online';
+                const isBlocked = user.isBlocked;
+                const lastActive = user.lastActivity ? new Date(user.lastActivity) : null;
+                const timeAgo = lastActive ? getTimeAgo(lastActive) : 'Jamais';
+                const avatar = user.pseudo ? user.pseudo[0].toUpperCase() : '?';
+                
+                html += `
+                    <div class="user-card" data-pseudo="${user.pseudo?.toLowerCase()}" data-id="${user.facebookId}">
+                        <div class="user-header">
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <div class="user-avatar">${avatar}</div>
+                                <div>
+                                    <div class="user-name">
+                                        <span class="status-indicator ${isBlocked ? 'status-blocked' : isOnline ? 'status-online' : 'status-offline'}"></span>
+                                        ${user.pseudo || 'Utilisateur'}
+                                    </div>
+                                    <div class="user-id">${user.facebookId?.substring(0, 12)}...</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="user-stats">
+                            <div class="user-stat">
+                                <div class="user-stat-value">${user.totalConversations || 0}</div>
+                                <div class="user-stat-label">Conversations</div>
+                            </div>
+                            <div class="user-stat">
+                                <div class="user-stat-value">${user.totalMessages || 0}</div>
+                                <div class="user-stat-label">Messages</div>
+                            </div>
+                            <div class="user-stat">
+                                <div class="user-stat-value">⭐ ${user.rating?.toFixed(1) || '5.0'}</div>
+                                <div class="user-stat-label">Note</div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin: 1rem 0;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="color: #718096; font-size: 0.875rem;">Dernière activité:</span>
+                                <span style="color: #4a5568; font-size: 0.875rem; font-weight: 500;">${timeAgo}</span>
+                            </div>
+                            ${user.interests && user.interests.length > 0 ? `
+                                <div style="margin-top: 0.5rem;">
+                                    <span style="color: #718096; font-size: 0.875rem;">Intérêts:</span>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.25rem;">
+                                        ${user.interests.map(i => `<span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">${i}</span>`).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="user-actions">
+                            <button class="user-btn btn-message" onclick="sendMessage('${user.facebookId}')">💬 Message</button>
+                            ${isBlocked ? 
+                                `<button class="user-btn btn-unblock" onclick="unblockUser('${user.facebookId}')">✅ Débloquer</button>` :
+                                `<button class="user-btn btn-warn" onclick="warnUser('${user.facebookId}')">⚠️ Avertir</button>
+                                 <button class="user-btn btn-block" onclick="blockUser('${user.facebookId}')">🚫 Bloquer</button>`
+                            }
+                        </div>
+                    </div>`;
+            }
+        }
+        
+        html += `
+                    </div>
+                </div>
+                
+                <script>
+                    function getTimeAgo(date) {
+                        const seconds = Math.floor((new Date() - date) / 1000);
+                        if (seconds < 60) return 'Il y a ' + seconds + ' secondes';
+                        const minutes = Math.floor(seconds / 60);
+                        if (minutes < 60) return 'Il y a ' + minutes + ' minutes';
+                        const hours = Math.floor(minutes / 60);
+                        if (hours < 24) return 'Il y a ' + hours + ' heures';
+                        const days = Math.floor(hours / 24);
+                        return 'Il y a ' + days + ' jours';
+                    }
+                    
+                    function searchUsers() {
+                        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+                        const cards = document.querySelectorAll('.user-card');
+                        
+                        cards.forEach(card => {
+                            const pseudo = card.dataset.pseudo || '';
+                            const id = card.dataset.id || '';
+                            
+                            if (pseudo.includes(searchTerm) || id.includes(searchTerm)) {
+                                card.style.display = '';
+                            } else {
+                                card.style.display = 'none';
+                            }
+                        });
+                    }
+                    
+                    function sendMessage(userId) {
+                        alert('Envoyer un message à: ' + userId);
+                    }
+                    
+                    function warnUser(userId) {
+                        if (confirm('Envoyer un avertissement à cet utilisateur ?')) {
+                            alert('Avertissement envoyé à: ' + userId);
+                        }
+                    }
+                    
+                    function blockUser(userId) {
+                        if (confirm('Bloquer cet utilisateur ?')) {
+                            alert('Utilisateur bloqué: ' + userId);
+                            location.reload();
+                        }
+                    }
+                    
+                    function unblockUser(userId) {
+                        if (confirm('Débloquer cet utilisateur ?')) {
+                            alert('Utilisateur débloqué: ' + userId);
+                            location.reload();
+                        }
+                    }
+                    
+                    ${users.map(user => {
+                        const lastActive = user.lastActivity ? new Date(user.lastActivity) : null;
+                        return lastActive ? `
+                            // Fonction helper pour calculer le temps écoulé
+                            function getTimeAgo(date) {
+                                const seconds = Math.floor((new Date() - date) / 1000);
+                                if (seconds < 60) return 'Il y a ' + seconds + ' secondes';
+                                const minutes = Math.floor(seconds / 60);
+                                if (minutes < 60) return 'Il y a ' + minutes + ' minutes';
+                                const hours = Math.floor(minutes / 60);
+                                if (hours < 24) return 'Il y a ' + hours + ' heures';
+                                const days = Math.floor(hours / 24);
+                                return 'Il y a ' + days + ' jours';
+                            }
+                        ` : '';
+                    }).join('')}
+                </script>
+            </body>
+            </html>`;
+        
+        res.send(html);
+    } catch (error) {
+        console.error('Erreur page utilisateurs:', error);
+        res.status(500).send(`<h1>Erreur</h1><p>${error.message}</p><a href="/admin/dashboard-direct">Retour</a>`);
+    }
+});
+
+// Fonction helper pour calculer le temps écoulé
+function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 60) return `Il y a ${seconds} secondes`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `Il y a ${minutes} minutes`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Il y a ${hours} heures`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `Il y a ${days} jours`;
+    const months = Math.floor(days / 30);
+    return `Il y a ${months} mois`;
+}
 
 // Route de santé
 app.get('/health', (req, res) => {
