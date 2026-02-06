@@ -26,7 +26,6 @@ function generateRandomPseudo() {
     return `${adjective}${noun}${number}`;
 }
 
-// Fonction pour s'assurer que le pseudo est unique
 async function generateUniquePseudo() {
     const { User } = require('../models');
     let pseudo;
@@ -42,7 +41,6 @@ async function generateUniquePseudo() {
         attempts++;
     } while (attempts < maxAttempts);
     
-    // Si on n'arrive pas à trouver un pseudo unique, ajouter un timestamp
     return `User${Date.now()}`;
 }
 
@@ -77,6 +75,13 @@ class MessageHandler {
             // Marquer comme vu
             await this.fb.markSeen(senderId);
             
+            // GÉRER LES QUICK REPLIES
+            if (message.quick_reply && message.quick_reply.payload) {
+                console.log(`🔘 Quick Reply reçu: ${message.quick_reply.payload}`);
+                await this.handleQuickReplyPayload(senderId, message.quick_reply.payload);
+                return;
+            }
+            
             // Vérifier/récupérer l'utilisateur
             let user = await User.findOne({ facebookId: senderId });
             
@@ -84,10 +89,9 @@ class MessageHandler {
                 // GÉNÉRER UN PSEUDO ALÉATOIRE UNIQUE
                 const randomPseudo = await generateUniquePseudo();
                 
-                // Créer un nouvel utilisateur avec un pseudo unique
                 user = await User.create({
                     facebookId: senderId,
-                    pseudo: randomPseudo, // Pseudo unique au lieu de 'Anonyme'
+                    pseudo: randomPseudo,
                     createdAt: new Date(),
                     lastActivity: new Date(),
                     status: 'online',
@@ -97,8 +101,6 @@ class MessageHandler {
                 });
                 
                 console.log(`🆕 Nouvel utilisateur créé: ${randomPseudo} (${senderId})`);
-                
-                // Message de bienvenue personnalisé avec le pseudo
                 await this.sendWelcomeMessageWithPseudo(senderId, randomPseudo);
                 return;
             }
@@ -113,8 +115,7 @@ class MessageHandler {
                     "Votre compte a été suspendu pour violation des règles.\n\n" +
                     `Raison: ${user.blockReason || 'Violation des conditions d\'utilisation'}\n` +
                     `Date: ${user.blockedAt ? new Date(user.blockedAt).toLocaleDateString('fr-FR') : 'Non spécifiée'}\n\n` +
-                    "Cette décision est définitive.\n\n" +
-                    "Si vous pensez qu'il s'agit d'une erreur, contactez le support."
+                    "Cette décision est définitive."
                 );
                 
                 if (user.status !== 'blocked') {
@@ -183,6 +184,70 @@ class MessageHandler {
                 "Tapez /help pour voir les commandes disponibles."
             );
         }
+    }
+
+    // NOUVELLE MÉTHODE : Gérer les Quick Reply Payloads
+    async handleQuickReplyPayload(senderId, payload) {
+        try {
+            switch(payload) {
+                case 'QUICK_CHERCHER':
+                    await this.chatManager.addToQueue(senderId);
+                    break;
+                    
+                case 'QUICK_STOP':
+                    await this.handleStop(senderId);
+                    break;
+                    
+                case 'QUICK_PROFIL':
+                    await this.showProfile(senderId);
+                    break;
+                    
+                case 'QUICK_STATS':
+                    await this.showUserStats(senderId);
+                    break;
+                    
+                case 'QUICK_INFOS':
+                    await this.showBotStats(senderId);
+                    break;
+                    
+                case 'QUICK_HELP':
+                    await this.showHelp(senderId);
+                    break;
+                    
+                case 'QUICK_SIGNALER':
+                    await this.handleReport(senderId);
+                    break;
+                    
+                case 'QUICK_PSEUDO':
+                    await this.showPseudoInstructions(senderId);
+                    break;
+                    
+                default:
+                    console.log(`Payload non géré: ${payload}`);
+                    await this.showHelp(senderId);
+                    break;
+            }
+        } catch (error) {
+            console.error('Erreur traitement Quick Reply:', error);
+        }
+    }
+
+    // Instructions pour changer de pseudo
+    async showPseudoInstructions(senderId) {
+        const message = 
+            "✏️ CHANGER DE PSEUDO\n" +
+            "━━━━━━━━━━━━━━━━━━\n\n" +
+            "Pour changer votre pseudo, tapez :\n" +
+            "/pseudo VotreNouveauNom\n\n" +
+            "Exemples :\n" +
+            "• /pseudo SuperChat123\n" +
+            "• /pseudo DragonBleu\n" +
+            "• /pseudo Mystique_42\n\n" +
+            "Règles :\n" +
+            "• 3 à 20 caractères\n" +
+            "• Lettres, chiffres et _ uniquement";
+
+        await this.fb.sendTextMessage(senderId, message);
     }
 
     // Stocker les messages dans la collection séparée
@@ -294,28 +359,42 @@ class MessageHandler {
         }
     }
 
-    // Nouveau message de bienvenue avec pseudo
+    // Message de bienvenue avec Quick Replies
     async sendWelcomeMessageWithPseudo(senderId, pseudo) {
         const welcomeMessage = 
             "🎭 Bienvenue sur SpeakToStranger !\n" +
             "━━━━━━━━━━━━━━━━━━\n\n" +
             `✨ Votre pseudo : ${pseudo}\n\n` +
-            "💡 Vous pouvez le changer avec :\n" +
-            "/pseudo NouveauNom\n\n" +
-            "📝 COMMANDES DISPONIBLES :\n" +
-            "━━━━━━━━━━━━━━━━━━\n" +
-            "/chercher - 🔍 Trouver un partenaire\n" +
-            "/stop - 🛑 Quitter la conversation\n" +
-            "/pseudo - ✏️ Changer votre pseudo\n" +
-            "/profil - 👤 Voir votre profil\n" +
-            "/stats - 📊 Voir vos statistiques\n" +
-            "/help - ❓ Afficher l'aide\n\n" +
-            "🎯 Tapez /chercher pour rencontrer quelqu'un !";
+            "💡 Tapez /help pour les commandes\n" +
+            "ou utilisez les boutons ci-dessous :";
 
-        await this.fb.sendTextMessage(senderId, welcomeMessage);
+        const quickReplies = [
+            {
+                content_type: 'text',
+                title: '🔍 Chercher',
+                payload: 'QUICK_CHERCHER'
+            },
+            {
+                content_type: 'text',
+                title: '✏️ Changer pseudo',
+                payload: 'QUICK_PSEUDO'
+            },
+            {
+                content_type: 'text',
+                title: '👤 Mon profil',
+                payload: 'QUICK_PROFIL'
+            },
+            {
+                content_type: 'text',
+                title: '❓ Aide',
+                payload: 'QUICK_HELP'
+            }
+        ];
+
+        await this.fb.sendQuickReply(senderId, welcomeMessage, quickReplies);
     }
 
-    // Message de bienvenue normal (pour les anciens utilisateurs)
+    // Message de bienvenue normal avec Quick Replies
     async sendWelcomeMessage(senderId) {
         const user = await User.findOne({ facebookId: senderId });
         const pseudo = user?.pseudo || 'Anonyme';
@@ -324,54 +403,139 @@ class MessageHandler {
             "🎭 Bienvenue sur SpeakToStranger !\n\n" +
             `Votre pseudo actuel : ${pseudo}\n\n` +
             "Je suis votre assistant pour vous connecter avec des inconnus.\n\n" +
-            "📝 COMMANDES DISPONIBLES :\n" +
-            "━━━━━━━━━━━━━━━━━━\n" +
-            "/chercher - 🔍 Trouver un partenaire\n" +
-            "/stop - 🛑 Quitter la conversation\n" +
-            "/pseudo - ✏️ Changer votre pseudo\n" +
-            "/profil - 👤 Voir votre profil\n" +
-            "/stats - 📊 Voir vos statistiques\n" +
-            "/infos - 📈 Statistiques du bot\n" +
-            "/signaler - 🚨 Signaler un utilisateur\n" +
-            "/help - ❓ Afficher cette aide\n\n" +
-            "🎯 Commencez par taper /chercher pour trouver quelqu'un !";
+            "Utilisez les commandes ou les boutons :";
 
-        await this.fb.sendTextMessage(senderId, welcomeMessage);
+        const quickReplies = [
+            {
+                content_type: 'text',
+                title: '🔍 Chercher',
+                payload: 'QUICK_CHERCHER'
+            },
+            {
+                content_type: 'text',
+                title: '👤 Profil',
+                payload: 'QUICK_PROFIL'
+            },
+            {
+                content_type: 'text',
+                title: '📊 Stats',
+                payload: 'QUICK_STATS'
+            },
+            {
+                content_type: 'text',
+                title: '❓ Aide',
+                payload: 'QUICK_HELP'
+            }
+        ];
+
+        await this.fb.sendQuickReply(senderId, welcomeMessage, quickReplies);
     }
 
-    // Afficher l'aide
+    // Afficher l'aide avec Quick Replies dynamiques
     async showHelp(senderId) {
         const user = await User.findOne({ facebookId: senderId });
         const pseudo = user?.pseudo || 'Anonyme';
         
-        const helpMessage = 
-            `👋 Bonjour ${pseudo} !\n\n` +
-            "📝 COMMANDES DISPONIBLES :\n" +
-            "━━━━━━━━━━━━━━━━━━\n" +
-            "/chercher - 🔍 Trouver un partenaire\n" +
-            "/stop - 🛑 Quitter la conversation\n" +
-            "/pseudo [nom] - ✏️ Changer votre pseudo\n" +
-            "/profil - 👤 Voir votre profil\n" +
-            "/stats - 📊 Voir vos statistiques\n" +
-            "/infos - 📈 Statistiques du bot\n" +
-            "/signaler - 🚨 Signaler un utilisateur\n" +
-            "/feedback [message] - 💬 Envoyer un feedback\n" +
-            "/help - ❓ Afficher cette aide\n\n" +
-            "💡 CONSEILS :\n" +
-            "• Restez respectueux\n" +
-            "• Ne partagez pas d'infos personnelles\n" +
-            "• Amusez-vous ! 🎉\n\n" +
-            "🎯 Tapez /chercher pour commencer !";
+        // Vérifier le contexte de l'utilisateur
+        const isInChat = this.chatManager.isInChat(senderId);
+        const isInQueue = this.chatManager.isInQueue(senderId);
+        
+        let helpMessage = `👋 Bonjour ${pseudo} !\n\n`;
+        let quickReplies = [];
+        
+        if (isInChat) {
+            // En conversation
+            helpMessage += 
+                "🔴 Vous êtes en conversation\n\n" +
+                "Commandes disponibles :\n" +
+                "• /stop - Quitter la conversation\n" +
+                "• /signaler - Signaler l'utilisateur\n" +
+                "• /profil - Voir votre profil\n\n" +
+                "Ou utilisez les boutons :";
+            
+            quickReplies = [
+                {
+                    content_type: 'text',
+                    title: '🛑 Quitter',
+                    payload: 'QUICK_STOP'
+                },
+                {
+                    content_type: 'text',
+                    title: '🚨 Signaler',
+                    payload: 'QUICK_SIGNALER'
+                },
+                {
+                    content_type: 'text',
+                    title: '👤 Profil',
+                    payload: 'QUICK_PROFIL'
+                }
+            ];
+            
+        } else if (isInQueue) {
+            // En file d'attente
+            helpMessage += 
+                "⏳ Vous êtes en recherche...\n\n" +
+                "• /stop - Annuler la recherche\n" +
+                "• /profil - Voir votre profil\n\n" +
+                "Ou utilisez les boutons :";
+            
+            quickReplies = [
+                {
+                    content_type: 'text',
+                    title: '❌ Annuler',
+                    payload: 'QUICK_STOP'
+                },
+                {
+                    content_type: 'text',
+                    title: '👤 Profil',
+                    payload: 'QUICK_PROFIL'
+                },
+                {
+                    content_type: 'text',
+                    title: '📊 Stats',
+                    payload: 'QUICK_STATS'
+                }
+            ];
+            
+        } else {
+            // Menu principal
+            helpMessage += 
+                "📝 COMMANDES DISPONIBLES :\n" +
+                "━━━━━━━━━━━━━━━━━━\n" +
+                "• /chercher - Trouver quelqu'un\n" +
+                "• /profil - Voir votre profil\n" +
+                "• /stats - Vos statistiques\n" +
+                "• /infos - Stats du bot\n" +
+                "• /pseudo - Changer de nom\n\n" +
+                "Utilisez les commandes ou les boutons :";
+            
+            quickReplies = [
+                {
+                    content_type: 'text',
+                    title: '🔍 Chercher',
+                    payload: 'QUICK_CHERCHER'
+                },
+                {
+                    content_type: 'text',
+                    title: '👤 Profil',
+                    payload: 'QUICK_PROFIL'
+                },
+                {
+                    content_type: 'text',
+                    title: '📊 Stats',
+                    payload: 'QUICK_STATS'
+                },
+                {
+                    content_type: 'text',
+                    title: '📈 Infos Bot',
+                    payload: 'QUICK_INFOS'
+                }
+            ];
+        }
 
-        await this.fb.sendTextMessage(senderId, helpMessage);
+        await this.fb.sendQuickReply(senderId, helpMessage, quickReplies);
     }
 
-    // ... TOUTES VOS AUTRES MÉTHODES RESTENT IDENTIQUES ...
-    // (handleStop, changePseudo, showProfile, showUserStats, showBotStats, handleReport, handleFeedback, handlePostback)
-    
-    // Je ne les recopie pas car elles restent exactement les mêmes
-    // Continuez avec votre code existant pour ces méthodes
-    
     // Gérer /stop
     async handleStop(senderId) {
         try {
@@ -382,10 +546,27 @@ class MessageHandler {
             
             if (this.chatManager.isInQueue(senderId)) {
                 await this.chatManager.removeFromQueue(senderId);
-                await this.fb.sendTextMessage(senderId,
-                    "✅ Recherche annulée.\n\n" +
-                    "Tapez /chercher quand vous voudrez trouver un partenaire."
-                );
+                
+                const message = "✅ Recherche annulée.\n\nQue voulez-vous faire ?";
+                const quickReplies = [
+                    {
+                        content_type: 'text',
+                        title: '🔍 Nouvelle recherche',
+                        payload: 'QUICK_CHERCHER'
+                    },
+                    {
+                        content_type: 'text',
+                        title: '👤 Mon profil',
+                        payload: 'QUICK_PROFIL'
+                    },
+                    {
+                        content_type: 'text',
+                        title: '❓ Aide',
+                        payload: 'QUICK_HELP'
+                    }
+                ];
+                
+                await this.fb.sendQuickReply(senderId, message, quickReplies);
                 return;
             }
             
@@ -406,11 +587,7 @@ class MessageHandler {
     async changePseudo(senderId, newPseudo) {
         try {
             if (!newPseudo || newPseudo.trim() === '') {
-                await this.fb.sendTextMessage(senderId,
-                    "❌ Format incorrect !\n\n" +
-                    "Utilisation : /pseudo VotreNouveauPseudo\n\n" +
-                    "Exemple : /pseudo SuperChat123"
-                );
+                await this.showPseudoInstructions(senderId);
                 return;
             }
 
@@ -487,13 +664,32 @@ class MessageHandler {
                 }
             }
 
-            await this.fb.sendTextMessage(senderId,
+            const successMessage = 
                 "✅ PSEUDO CHANGÉ AVEC SUCCÈS !\n" +
                 "━━━━━━━━━━━━━━━━━━\n\n" +
                 `Ancien : ${oldPseudo}\n` +
-                `Nouveau : ${newPseudo}\n\n" +
-                "💡 Tapez /profil pour voir vos infos"
-            );
+                `Nouveau : ${newPseudo}\n\n` +
+                "Que voulez-vous faire ?";
+
+            const quickReplies = [
+                {
+                    content_type: 'text',
+                    title: '👤 Voir profil',
+                    payload: 'QUICK_PROFIL'
+                },
+                {
+                    content_type: 'text',
+                    title: '🔍 Chercher',
+                    payload: 'QUICK_CHERCHER'
+                },
+                {
+                    content_type: 'text',
+                    title: '❓ Aide',
+                    payload: 'QUICK_HELP'
+                }
+            ];
+
+            await this.fb.sendQuickReply(senderId, successMessage, quickReplies);
 
             console.log(`✅ Pseudo changé : ${oldPseudo} → ${newPseudo}`);
 
@@ -505,7 +701,7 @@ class MessageHandler {
         }
     }
 
-    // Afficher le profil
+    // Afficher le profil avec Quick Replies
     async showProfile(senderId) {
         try {
             const user = await User.findOne({ facebookId: senderId });
@@ -528,11 +724,32 @@ class MessageHandler {
                 `📨 Messages : ${user.totalMessages || 0}\n` +
                 `📅 Membre depuis : ${memberSince}\n` +
                 `📊 Statut : ${user.isBlocked ? '🔴 Bloqué' : '🟢 Actif'}\n\n` +
-                "Commandes :\n" +
-                "/pseudo [nom] - Changer de pseudo\n" +
-                "/stats - Statistiques détaillées";
+                "Que voulez-vous faire ?";
 
-            await this.fb.sendTextMessage(senderId, profileMessage);
+            const quickReplies = [
+                {
+                    content_type: 'text',
+                    title: '✏️ Changer pseudo',
+                    payload: 'QUICK_PSEUDO'
+                },
+                {
+                    content_type: 'text',
+                    title: '📊 Mes stats',
+                    payload: 'QUICK_STATS'
+                },
+                {
+                    content_type: 'text',
+                    title: '🔍 Chercher',
+                    payload: 'QUICK_CHERCHER'
+                },
+                {
+                    content_type: 'text',
+                    title: '❓ Aide',
+                    payload: 'QUICK_HELP'
+                }
+            ];
+
+            await this.fb.sendQuickReply(senderId, profileMessage, quickReplies);
 
         } catch (error) {
             console.error('Erreur affichage profil:', error);
@@ -542,7 +759,7 @@ class MessageHandler {
         }
     }
 
-    // Afficher les stats utilisateur
+    // Afficher les stats utilisateur avec Quick Replies
     async showUserStats(senderId) {
         try {
             const user = await User.findOne({ facebookId: senderId });
@@ -568,9 +785,32 @@ class MessageHandler {
                 `📅 Messages aujourd'hui : ${todayMessages}\n` +
                 `⚠️ Signalements : ${user.reportCount || 0}\n` +
                 `📅 Membre depuis : ${new Date(user.createdAt).toLocaleDateString('fr-FR')}\n\n` +
-                "Continuez à chatter ! 🚀";
+                "Actions rapides :";
 
-            await this.fb.sendTextMessage(senderId, statsMessage);
+            const quickReplies = [
+                {
+                    content_type: 'text',
+                    title: '👤 Profil',
+                    payload: 'QUICK_PROFIL'
+                },
+                {
+                    content_type: 'text',
+                    title: '🔍 Chercher',
+                    payload: 'QUICK_CHERCHER'
+                },
+                {
+                    content_type: 'text',
+                    title: '📈 Stats Bot',
+                    payload: 'QUICK_INFOS'
+                },
+                {
+                    content_type: 'text',
+                    title: '❓ Aide',
+                    payload: 'QUICK_HELP'
+                }
+            ];
+
+            await this.fb.sendQuickReply(senderId, statsMessage, quickReplies);
 
         } catch (error) {
             console.error('Erreur stats utilisateur:', error);
@@ -580,7 +820,7 @@ class MessageHandler {
         }
     }
 
-    // Afficher les stats du bot
+    // Afficher les stats du bot avec Quick Replies
     async showBotStats(senderId) {
         try {
             const activeChats = this.chatManager.getActiveChatsCount();
@@ -608,9 +848,32 @@ class MessageHandler {
                 `• Actifs (24h) : ${activeUsers}\n` +
                 `• Conversations : ${totalChats}\n` +
                 `• Messages : ${totalMessages}\n\n` +
-                "Bot créé avec ❤️";
+                "Que voulez-vous faire ?";
 
-            await this.fb.sendTextMessage(senderId, statsMessage);
+            const quickReplies = [
+                {
+                    content_type: 'text',
+                    title: '🔍 Chercher',
+                    payload: 'QUICK_CHERCHER'
+                },
+                {
+                    content_type: 'text',
+                    title: '👤 Mon profil',
+                    payload: 'QUICK_PROFIL'
+                },
+                {
+                    content_type: 'text',
+                    title: '📊 Mes stats',
+                    payload: 'QUICK_STATS'
+                },
+                {
+                    content_type: 'text',
+                    title: '❓ Aide',
+                    payload: 'QUICK_HELP'
+                }
+            ];
+
+            await this.fb.sendQuickReply(senderId, statsMessage, quickReplies);
 
         } catch (error) {
             console.error('Erreur stats bot:', error);
@@ -655,17 +918,12 @@ class MessageHandler {
             const reporterPseudo = reporter?.pseudo || 'Anonyme';
             const reportedPseudo = reported?.pseudo || 'Anonyme';
 
-            // Créer le signalement avec tous les champs nécessaires
+            // Créer le signalement
             const reportData = {
-                // Champs principaux
                 reporterId: senderId,
                 reportedUserId: chatInfo.partnerId,
-                
-                // Champs de compatibilité (au cas où votre modèle les utilise)
                 reportedBy: senderId,
                 reportedUser: chatInfo.partnerId,
-                
-                // Informations supplémentaires
                 chatId: chatInfo.chatId,
                 reason: 'Comportement inapproprié',
                 status: 'pending',
@@ -675,14 +933,13 @@ class MessageHandler {
 
             console.log('📝 Tentative de création du signalement:', reportData);
 
-            // Créer le signalement dans la base de données
             const report = await Report.create(reportData);
             
             console.log(`✅ Signalement créé avec succès: ${report._id}`);
             console.log(`   De: ${reporterPseudo} (${senderId})`);
             console.log(`   Contre: ${reportedPseudo} (${chatInfo.partnerId})`);
 
-            // Mettre à jour le compteur de signalements de l'utilisateur signalé
+            // Mettre à jour le compteur de signalements
             await User.findOneAndUpdate(
                 { facebookId: chatInfo.partnerId },
                 { 
@@ -698,7 +955,7 @@ class MessageHandler {
                 }
             );
 
-            // Vérifier si l'utilisateur doit être bloqué (3 signalements ou plus)
+            // Vérifier si l'utilisateur doit être bloqué
             const reportedUser = await User.findOne({ facebookId: chatInfo.partnerId });
             
             if (reportedUser && reportedUser.reportCount >= 3) {
@@ -713,7 +970,6 @@ class MessageHandler {
                     }
                 );
                 
-                // Notifier l'utilisateur bloqué
                 await this.fb.sendTextMessage(chatInfo.partnerId,
                     "🚫 COMPTE SUSPENDU\n" +
                     "━━━━━━━━━━━━━━━━━━\n\n" +
@@ -725,17 +981,34 @@ class MessageHandler {
             // Terminer la conversation
             await this.chatManager.endChat(senderId, 'reported');
 
-            // Message de confirmation pour le rapporteur
-            await this.fb.sendTextMessage(senderId,
+            // Message de confirmation avec Quick Replies
+            const confirmMessage = 
                 "✅ SIGNALEMENT ENREGISTRÉ\n" +
                 "━━━━━━━━━━━━━━━━━━\n\n" +
                 "Merci d'avoir signalé ce comportement.\n" +
                 "Notre équipe va examiner cette conversation.\n\n" +
                 "La conversation a été terminée pour votre sécurité.\n\n" +
-                "Commandes disponibles :\n" +
-                "/chercher - Trouver un nouveau partenaire\n" +
-                "/help - Afficher l'aide"
-            );
+                "Que voulez-vous faire ?";
+
+            const quickReplies = [
+                {
+                    content_type: 'text',
+                    title: '🔍 Nouvelle recherche',
+                    payload: 'QUICK_CHERCHER'
+                },
+                {
+                    content_type: 'text',
+                    title: '👤 Mon profil',
+                    payload: 'QUICK_PROFIL'
+                },
+                {
+                    content_type: 'text',
+                    title: '❓ Aide',
+                    payload: 'QUICK_HELP'
+                }
+            ];
+
+            await this.fb.sendQuickReply(senderId, confirmMessage, quickReplies);
 
             // Message neutre pour la personne signalée
             await this.fb.sendTextMessage(chatInfo.partnerId,
@@ -745,7 +1018,6 @@ class MessageHandler {
                 "Tapez /chercher pour trouver un nouveau partenaire."
             );
 
-            // Log pour l'admin
             console.log(`⚠️ SIGNALEMENT:`);
             console.log(`   • Rapporteur: ${reporterPseudo} (${senderId})`);
             console.log(`   • Signalé: ${reportedPseudo} (${chatInfo.partnerId})`);
@@ -756,14 +1028,12 @@ class MessageHandler {
             console.error('❌ Erreur complète signalement:', error);
             console.error('Stack:', error.stack);
             
-            // Message d'erreur pour l'utilisateur
             await this.fb.sendTextMessage(senderId,
                 "❌ Une erreur s'est produite lors du signalement.\n\n" +
                 "La conversation va être terminée par sécurité.\n\n" +
                 "Si le problème persiste, contactez le support."
             );
             
-            // Essayer quand même de terminer la conversation
             try {
                 if (this.chatManager.isInChat(senderId)) {
                     await this.chatManager.endChat(senderId, 'error');
@@ -774,7 +1044,7 @@ class MessageHandler {
         }
     }
 
-    // Dans messageHandler.js
+    // Gérer les feedbacks
     async handleFeedback(senderId, feedbackText) {
         try {
             if (!feedbackText || feedbackText.trim() === '') {
@@ -789,11 +1059,9 @@ class MessageHandler {
                 return;
             }
 
-            // Récupérer les infos utilisateur
             const user = await User.findOne({ facebookId: senderId });
             const userPseudo = user?.pseudo || 'Anonyme';
 
-            // Déterminer le type de feedback
             let feedbackType = 'other';
             const lowerText = feedbackText.toLowerCase();
             
@@ -807,7 +1075,6 @@ class MessageHandler {
                 feedbackType = 'complaint';
             }
 
-            // Sauvegarder le feedback dans MongoDB
             const { Feedback } = require('../models');
             const feedback = await Feedback.create({
                 userId: senderId,
@@ -820,7 +1087,6 @@ class MessageHandler {
 
             console.log(`📝 Nouveau feedback (${feedbackType}) de ${userPseudo}: ${feedbackText}`);
 
-            // Message de confirmation personnalisé selon le type
             let confirmMessage = "✅ Merci pour votre feedback !\n\n";
             
             switch(feedbackType) {
