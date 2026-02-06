@@ -2622,6 +2622,20 @@ app.get('/admin/users-simple', async (req, res) => {
             console.log('Erreur récupération utilisateurs:', e);
         }
         
+        // Fonction helper locale
+        function getTimeAgo(date) {
+            const seconds = Math.floor((new Date() - date) / 1000);
+            if (seconds < 60) return `Il y a ${seconds} secondes`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `Il y a ${minutes} minutes`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `Il y a ${hours} heures`;
+            const days = Math.floor(hours / 24);
+            if (days < 30) return `Il y a ${days} jours`;
+            const months = Math.floor(days / 30);
+            return `Il y a ${months} mois`;
+        }
+        
         let html = `
             <!DOCTYPE html>
             <html lang="fr">
@@ -2975,7 +2989,7 @@ app.get('/admin/users-simple', async (req, res) => {
                 const avatar = user.pseudo ? user.pseudo[0].toUpperCase() : '?';
                 
                 html += `
-                    <div class="user-card" data-pseudo="${user.pseudo?.toLowerCase()}" data-id="${user.facebookId}">
+                    <div class="user-card" data-pseudo="${user.pseudo?.toLowerCase() || ''}" data-id="${user.facebookId}">
                         <div class="user-header">
                             <div style="display: flex; align-items: center; gap: 1rem;">
                                 <div class="user-avatar">${avatar}</div>
@@ -3031,22 +3045,11 @@ app.get('/admin/users-simple', async (req, res) => {
             }
         }
         
-html += `
+        html += `
                     </div>
                 </div>
                 
                 <script>
-                    function getTimeAgo(date) {
-                        const seconds = Math.floor((new Date() - date) / 1000);
-                        if (seconds < 60) return 'Il y a ' + seconds + ' secondes';
-                        const minutes = Math.floor(seconds / 60);
-                        if (minutes < 60) return 'Il y a ' + minutes + ' minutes';
-                        const hours = Math.floor(minutes / 60);
-                        if (hours < 24) return 'Il y a ' + hours + ' heures';
-                        const days = Math.floor(hours / 24);
-                        return 'Il y a ' + days + ' jours';
-                    }
-                    
                     function searchUsers() {
                         const searchTerm = document.getElementById('searchInput').value.toLowerCase();
                         const cards = document.querySelectorAll('.user-card');
@@ -3063,7 +3066,6 @@ html += `
                         });
                     }
                     
-                    // NOUVELLE FONCTION - Envoyer un message personnalisé
                     async function sendMessage(userId) {
                         const message = prompt('Entrez le message à envoyer à cet utilisateur:');
                         if (!message) return;
@@ -3087,7 +3089,6 @@ html += `
                         }
                     }
                     
-                    // NOUVELLE FONCTION - Avertir vraiment l'utilisateur
                     async function warnUser(userId) {
                         const reasons = [
                             'Comportement inapproprié',
@@ -3103,7 +3104,6 @@ html += `
                         
                         if (!reason) return;
                         
-                        // Si c'est un numéro, prendre la raison prédéfinie
                         const reasonIndex = parseInt(reason) - 1;
                         if (reasonIndex >= 0 && reasonIndex < reasons.length - 1) {
                             reason = reasons[reasonIndex];
@@ -3134,7 +3134,6 @@ html += `
                         }
                     }
                     
-                    // NOUVELLE FONCTION - Bloquer vraiment l'utilisateur
                     async function blockUser(userId) {
                         const reasons = [
                             'Violation grave des conditions',
@@ -3180,7 +3179,6 @@ html += `
                         }
                     }
                     
-                    // NOUVELLE FONCTION - Débloquer vraiment l'utilisateur
                     async function unblockUser(userId) {
                         if (confirm('Êtes-vous sûr de vouloir débloquer cet utilisateur ?')) {
                             try {
@@ -3205,20 +3203,13 @@ html += `
                 </script>
             </body>
             </html>`;
-
-// Fonction helper pour calculer le temps écoulé
-function getTimeAgo(date) {
-    const seconds = Math.floor((new Date() - date) / 1000);
-    if (seconds < 60) return `Il y a ${seconds} secondes`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `Il y a ${minutes} minutes`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `Il y a ${hours} heures`;
-    const days = Math.floor(hours / 24);
-    if (days < 30) return `Il y a ${days} jours`;
-    const months = Math.floor(days / 30);
-    return `Il y a ${months} mois`;
-}
+        
+        res.send(html);
+    } catch (error) {
+        console.error('Erreur page utilisateurs:', error);
+        res.status(500).send(`<h1>Erreur</h1><p>${error.message}</p><a href="/admin/dashboard-direct">Retour</a>`);
+    }
+});
 
 // Route de santé
 app.get('/health', (req, res) => {
@@ -3232,14 +3223,65 @@ app.get('/health', (req, res) => {
 // Page d'accueil
 app.get('/', (req, res) => {
     res.send(`
-        <h1>🎭 SpeakToStranger Bot</h1>
-        <p>Le bot est en ligne !</p>
-        <p><a href="/admin">Accès administration</a></p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>SpeakToStranger Bot</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    margin: 0;
+                }
+                .container {
+                    text-align: center;
+                    background: white;
+                    padding: 3rem;
+                    border-radius: 16px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                }
+                h1 {
+                    color: #2d3748;
+                    margin-bottom: 1rem;
+                }
+                p {
+                    color: #718096;
+                    margin-bottom: 2rem;
+                }
+                a {
+                    display: inline-block;
+                    padding: 12px 24px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 8px;
+                    font-weight: 500;
+                    transition: transform 0.2s;
+                }
+                a:hover {
+                    transform: translateY(-2px);
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🎭 SpeakToStranger Bot</h1>
+                <p>Le bot de chat anonyme est en ligne !</p>
+                <a href="/admin/dashboard-direct">Accès administration</a>
+            </div>
+        </body>
+        </html>
     `);
 });
 
+// Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🤖 SpeakToStranger bot démarré sur le port ${PORT}`);
     console.log(`📊 Dashboard admin: http://localhost:${PORT}/admin`);
+    console.log(`🔧 Webhook URL: http://localhost:${PORT}/webhook`);
 });
