@@ -2027,7 +2027,7 @@ L'équipe SpeakToStranger 🎭`;
 // ========================================
 // ROUTE DES CONVERSATIONS ACTIVES
 // ========================================
-app.get('/admin/chats-simple', async (req, res) => {
+app.get('/admin/chats', async (req, res) => {
     try {
         let activeChats = [];
         let queuedUsers = [];
