@@ -26,6 +26,7 @@ class MessageHandler {
 
     // Gérer les messages entrants
 // handlers/messageHandler.js - Version corrigée
+// handlers/messageHandler.js
 async handleMessage(senderId, message) {
     try {
         // Marquer comme vu
@@ -35,35 +36,43 @@ async handleMessage(senderId, message) {
         let user = await User.findOne({ facebookId: senderId });
         
         if (!user) {
-            // Nouvel utilisateur
+            // Créer un nouvel utilisateur avec un pseudo par défaut
             user = await User.create({
                 facebookId: senderId,
+                pseudo: 'Anonyme', // ✅ Ajouter un pseudo par défaut
                 createdAt: new Date(),
                 lastActivity: new Date(),
                 status: 'online',
-                isBlocked: false // Explicitement false pour les nouveaux
+                isBlocked: false
             });
             
             await this.sendWelcomeMessage(senderId);
             return;
         }
 
-        // VÉRIFICATION DU BLOCAGE EN PREMIER
+        // VÉRIFICATION DU BLOCAGE
         if (user.isBlocked === true) {
-            console.log(`🚫 Utilisateur bloqué tenté d'accès: ${senderId}`);
+            console.log(`🚫 Utilisateur bloqué tenté d'accès: ${senderId} (${user.pseudo})`);
             
-            // Message de blocage
             await this.fb.sendTextMessage(senderId, 
                 "🚫 COMPTE SUSPENDU\n" +
                 "━━━━━━━━━━━━━━━━━━\n\n" +
                 "Votre compte a été suspendu pour violation des règles.\n\n" +
-                `Raison: ${user.blockReason || 'Violation des conditions d\'utilisation'}\n\n` +
+                `Raison: ${user.blockReason || 'Violation des conditions d\'utilisation'}\n` +
+                `Date: ${user.blockedAt ? new Date(user.blockedAt).toLocaleDateString('fr-FR') : 'Non spécifiée'}\n\n` +
                 "Cette décision est définitive.\n\n" +
                 "Si vous pensez qu'il s'agit d'une erreur, contactez le support."
             );
             
-            // NE PAS continuer le traitement
-            return;
+            // Mettre à jour le statut si nécessaire
+            if (user.status !== 'blocked') {
+                await User.findOneAndUpdate(
+                    { facebookId: senderId },
+                    { status: 'blocked' }
+                );
+            }
+            
+            return; // STOP - Ne pas continuer
         }
 
         // Mettre à jour l'activité SEULEMENT si pas bloqué
@@ -75,56 +84,32 @@ async handleMessage(senderId, message) {
             }
         );
 
-        // ... reste du code pour les utilisateurs non bloqués ...
-                
-                // Premier message de bienvenue
-                await this.sendWelcomeMessage(senderId);
-                return;
-            }
+        // Suite du traitement pour les utilisateurs non bloqués...
+        const text = message.text?.toLowerCase().trim();
 
-            // Mettre à jour l'activité
-            await User.findOneAndUpdate(
-                { facebookId: senderId },
-                { 
-                    lastActivity: new Date(),
-                    status: 'online'
-                }
-            );
-
-            // Vérifier si bloqué
-            if (user.isBlocked) {
-                await this.fb.sendTextMessage(senderId, 
-                    "🚫 Votre compte a été suspendu.\n\n" +
-                    "Si vous pensez qu'il s'agit d'une erreur, contactez le support."
-                );
-                return;
-            }
-
-            const text = message.text?.toLowerCase().trim();
-
-            // Traiter les commandes
-            if (text?.startsWith('/')) {
-                await this.handleCommand(senderId, text);
-                return;
-            }
-
-            // Si en conversation, transférer le message
-            if (this.chatManager.isInChat(senderId)) {
-                await this.chatManager.relayMessage(senderId, message);
-                return;
-            }
-
-            // Sinon, afficher l'aide
-            await this.showHelp(senderId);
-
-        } catch (error) {
-            console.error('Erreur traitement message:', error);
-            await this.fb.sendTextMessage(senderId, 
-                "❌ Une erreur s'est produite. Veuillez réessayer.\n\n" +
-                "Tapez /help pour voir les commandes disponibles."
-            );
+        // Traiter les commandes
+        if (text?.startsWith('/')) {
+            await this.handleCommand(senderId, text);
+            return;
         }
+
+        // Si en conversation, transférer le message
+        if (this.chatManager.isInChat(senderId)) {
+            await this.chatManager.relayMessage(senderId, message);
+            return;
+        }
+
+        // Sinon, afficher l'aide
+        await this.showHelp(senderId);
+
+    } catch (error) {
+        console.error('Erreur traitement message:', error);
+        await this.fb.sendTextMessage(senderId, 
+            "❌ Une erreur s'est produite. Veuillez réessayer.\n\n" +
+            "Tapez /help pour voir les commandes disponibles."
+        );
     }
+}
 
     // Gérer les commandes
     async handleCommand(senderId, command) {
