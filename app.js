@@ -3031,7 +3031,7 @@ app.get('/admin/users-simple', async (req, res) => {
             }
         }
         
-        html += `
+html += `
                     </div>
                 </div>
                 
@@ -3063,56 +3063,148 @@ app.get('/admin/users-simple', async (req, res) => {
                         });
                     }
                     
-                    function sendMessage(userId) {
-                        alert('Envoyer un message à: ' + userId);
-                    }
-                    
-                    function warnUser(userId) {
-                        if (confirm('Envoyer un avertissement à cet utilisateur ?')) {
-                            alert('Avertissement envoyé à: ' + userId);
-                        }
-                    }
-                    
-                    function blockUser(userId) {
-                        if (confirm('Bloquer cet utilisateur ?')) {
-                            alert('Utilisateur bloqué: ' + userId);
-                            location.reload();
-                        }
-                    }
-                    
-                    function unblockUser(userId) {
-                        if (confirm('Débloquer cet utilisateur ?')) {
-                            alert('Utilisateur débloqué: ' + userId);
-                            location.reload();
-                        }
-                    }
-                    
-                    ${users.map(user => {
-                        const lastActive = user.lastActivity ? new Date(user.lastActivity) : null;
-                        return lastActive ? `
-                            // Fonction helper pour calculer le temps écoulé
-                            function getTimeAgo(date) {
-                                const seconds = Math.floor((new Date() - date) / 1000);
-                                if (seconds < 60) return 'Il y a ' + seconds + ' secondes';
-                                const minutes = Math.floor(seconds / 60);
-                                if (minutes < 60) return 'Il y a ' + minutes + ' minutes';
-                                const hours = Math.floor(minutes / 60);
-                                if (hours < 24) return 'Il y a ' + hours + ' heures';
-                                const days = Math.floor(hours / 24);
-                                return 'Il y a ' + days + ' jours';
+                    // NOUVELLE FONCTION - Envoyer un message personnalisé
+                    async function sendMessage(userId) {
+                        const message = prompt('Entrez le message à envoyer à cet utilisateur:');
+                        if (!message) return;
+                        
+                        try {
+                            const response = await fetch('/admin/user/' + userId + '/message', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ message })
+                            });
+                            
+                            const data = await response.json();
+                            if (data.success) {
+                                alert('✅ Message envoyé avec succès !');
+                            } else {
+                                alert('❌ Erreur: ' + (data.error || 'Impossible d\\'envoyer le message'));
                             }
-                        ` : '';
-                    }).join('')}
+                        } catch (error) {
+                            console.error('Erreur:', error);
+                            alert('❌ Erreur réseau: ' + error.message);
+                        }
+                    }
+                    
+                    // NOUVELLE FONCTION - Avertir vraiment l'utilisateur
+                    async function warnUser(userId) {
+                        const reasons = [
+                            'Comportement inapproprié',
+                            'Langage offensant',
+                            'Spam ou publicité',
+                            'Harcèlement',
+                            'Autre (personnalisé)'
+                        ];
+                        
+                        let reason = prompt('Raison de l\\'avertissement:\\n\\n' + 
+                            reasons.map((r, i) => (i+1) + '. ' + r).join('\\n') + 
+                            '\\n\\nEntrez le numéro ou tapez une raison personnalisée:');
+                        
+                        if (!reason) return;
+                        
+                        // Si c'est un numéro, prendre la raison prédéfinie
+                        const reasonIndex = parseInt(reason) - 1;
+                        if (reasonIndex >= 0 && reasonIndex < reasons.length - 1) {
+                            reason = reasons[reasonIndex];
+                        } else if (reason === '5') {
+                            reason = prompt('Entrez la raison personnalisée:');
+                            if (!reason) return;
+                        }
+                        
+                        if (confirm('Envoyer un avertissement à cet utilisateur ?\\n\\nRaison: ' + reason)) {
+                            try {
+                                const response = await fetch('/admin/user/' + userId + '/warn', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ reason })
+                                });
+                                
+                                const data = await response.json();
+                                if (data.success) {
+                                    alert('✅ Avertissement envoyé avec succès !');
+                                    setTimeout(() => location.reload(), 1000);
+                                } else {
+                                    alert('❌ Erreur: ' + (data.error || 'Impossible d\\'envoyer l\\'avertissement'));
+                                }
+                            } catch (error) {
+                                console.error('Erreur:', error);
+                                alert('❌ Erreur réseau: ' + error.message);
+                            }
+                        }
+                    }
+                    
+                    // NOUVELLE FONCTION - Bloquer vraiment l'utilisateur
+                    async function blockUser(userId) {
+                        const reasons = [
+                            'Violation grave des conditions',
+                            'Infractions répétées',
+                            'Harcèlement grave',
+                            'Contenu illégal',
+                            'Autre raison'
+                        ];
+                        
+                        let reason = prompt('Raison du blocage:\\n\\n' + 
+                            reasons.map((r, i) => (i+1) + '. ' + r).join('\\n') + 
+                            '\\n\\nEntrez le numéro ou tapez une raison personnalisée:');
+                        
+                        if (!reason) return;
+                        
+                        const reasonIndex = parseInt(reason) - 1;
+                        if (reasonIndex >= 0 && reasonIndex < reasons.length - 1) {
+                            reason = reasons[reasonIndex];
+                        } else if (reason === '5') {
+                            reason = prompt('Entrez la raison personnalisée:');
+                            if (!reason) return;
+                        }
+                        
+                        if (confirm('⚠️ ATTENTION ⚠️\\n\\nÊtes-vous sûr de vouloir BLOQUER cet utilisateur ?\\n\\nRaison: ' + reason + '\\n\\nCette action empêchera l\\'utilisateur d\\'utiliser le bot.')) {
+                            try {
+                                const response = await fetch('/admin/user/' + userId + '/block', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ reason })
+                                });
+                                
+                                const data = await response.json();
+                                if (data.success) {
+                                    alert('✅ Utilisateur bloqué avec succès !\\n\\n' + (data.message || ''));
+                                    setTimeout(() => location.reload(), 1000);
+                                } else {
+                                    alert('❌ Erreur: ' + (data.error || 'Impossible de bloquer l\\'utilisateur'));
+                                }
+                            } catch (error) {
+                                console.error('Erreur:', error);
+                                alert('❌ Erreur réseau: ' + error.message);
+                            }
+                        }
+                    }
+                    
+                    // NOUVELLE FONCTION - Débloquer vraiment l'utilisateur
+                    async function unblockUser(userId) {
+                        if (confirm('Êtes-vous sûr de vouloir débloquer cet utilisateur ?')) {
+                            try {
+                                const response = await fetch('/admin/user/' + userId + '/unblock', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' }
+                                });
+                                
+                                const data = await response.json();
+                                if (data.success) {
+                                    alert('✅ Utilisateur débloqué avec succès !\\n\\n' + (data.message || ''));
+                                    setTimeout(() => location.reload(), 1000);
+                                } else {
+                                    alert('❌ Erreur: ' + (data.error || 'Impossible de débloquer l\\'utilisateur'));
+                                }
+                            } catch (error) {
+                                console.error('Erreur:', error);
+                                alert('❌ Erreur réseau: ' + error.message);
+                            }
+                        }
+                    }
                 </script>
             </body>
             </html>`;
-        
-        res.send(html);
-    } catch (error) {
-        console.error('Erreur page utilisateurs:', error);
-        res.status(500).send(`<h1>Erreur</h1><p>${error.message}</p><a href="/admin/dashboard-direct">Retour</a>`);
-    }
-});
 
 // Fonction helper pour calculer le temps écoulé
 function getTimeAgo(date) {
