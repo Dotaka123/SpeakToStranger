@@ -15,7 +15,6 @@ require('./config/database');
 const { User, Chat, Queue, Report, Stats } = require('./models');
 const MessageHandler = require('./handlers/messageHandler');
 const ChatManager = require('./handlers/chatManager');
-const chatManager = new ChatManager();
 const UserManager = require('./handlers/userManager');
 
 // Configuration
