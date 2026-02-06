@@ -2158,29 +2158,118 @@ app.get('/admin/chats-simple', async (req, res) => {
                 </div>
                 
                 <script>
-                    function viewChat(chatId) {
-                        alert('Visualisation du chat ' + chatId + ' (fonctionnalité à implémenter)');
-                    }
-                    
-                    function warnUsers(chatId) {
-                        if (confirm('Envoyer un avertissement aux deux utilisateurs ?')) {
-                            fetch('/admin/chat/' + chatId + '/warn', { method: 'POST' })
-                                .then(() => {
-                                    alert('Avertissement envoyé');
-                                    location.reload();
-                                })
-                                .catch(err => alert('Erreur: ' + err));
+                    // Fonction pour voir les détails d'un chat
+                    async function viewChat(chatId) {
+                        try {
+                            const response = await fetch('/admin/chat/' + chatId + '/details');
+                            const data = await response.json();
+                            
+                            if (data.success && data.chat) {
+                                const chat = data.chat;
+                                let details = '📊 DÉTAILS DE LA CONVERSATION\\n';
+                                details += '━━━━━━━━━━━━━━━━━━━━━━━━\\n\\n';
+                                details += '🆔 ID: ' + (chat.id || chatId) + '\\n';
+                                details += '💬 Messages échangés: ' + (chat.messageCount || 0) + '\\n';
+                                details += '📍 Statut: ' + (chat.isActive ? '🟢 Active' : '🔴 Terminée') + '\\n';
+                                details += '👥 Participants: ' + (chat.participants ? chat.participants.length : 0) + '\\n';
+                                
+                                if (chat.startTime) {
+                                    const startTime = new Date(chat.startTime);
+                                    details += '🕐 Début: ' + startTime.toLocaleString('fr-FR') + '\\n';
+                                }
+                                
+                                details += '\\n━━━━━━━━━━━━━━━━━━━━━━━━\\n';
+                                
+                                // Afficher les participants
+                                if (chat.participants && chat.participants.length > 0) {
+                                    details += '\\n👥 PARTICIPANTS:\\n';
+                                    chat.participants.forEach((p, index) => {
+                                        details += '\\n' + (index + 1) + '. ' + (p.pseudo || p.userId || 'Utilisateur inconnu');
+                                        if (p.userId) details += '\\n   ID: ' + p.userId.substring(0, 15) + '...';
+                                    });
+                                    details += '\\n';
+                                }
+                                
+                                // Afficher les derniers messages si disponibles
+                                if (chat.messages && chat.messages.length > 0) {
+                                    details += '\\n━━━━━━━━━━━━━━━━━━━━━━━━\\n';
+                                    details += '📝 DERNIERS MESSAGES:\\n\\n';
+                                    
+                                    const lastMessages = chat.messages.slice(-5);
+                                    lastMessages.forEach(msg => {
+                                        const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('fr-FR') : '';
+                                        const sender = msg.senderPseudo || msg.senderId || 'Utilisateur';
+                                        const content = msg.content || msg.text || '[Message vide]';
+                                        
+                                        details += '[' + time + '] ' + sender + ':\\n';
+                                        details += content.substring(0, 100) + (content.length > 100 ? '...' : '') + '\\n\\n';
+                                    });
+                                } else {
+                                    details += '\\n📝 Aucun message enregistré pour cette conversation.';
+                                }
+                                
+                                alert(details);
+                            } else {
+                                // Si pas de détails, afficher les infos basiques
+                                alert('📊 CONVERSATION ' + chatId + '\\n\\n' +
+                                      '⚠️ Détails non disponibles\\n\\n' +
+                                      'Cette conversation pourrait être ancienne ou les détails\\n' +
+                                      'ne sont pas accessibles pour le moment.');
+                            }
+                        } catch (error) {
+                            console.error('Erreur récupération détails:', error);
+                            // Fallback : afficher au moins l'ID
+                            alert('📊 CONVERSATION\\n\\n' +
+                                  '🆔 ID: ' + chatId + '\\n\\n' +
+                                  '❌ Impossible de récupérer les détails\\n' +
+                                  'Erreur: ' + error.message);
                         }
                     }
                     
-                    function endChat(chatId) {
-                        if (confirm('Terminer cette conversation ?')) {
-                            fetch('/admin/chat/' + chatId + '/end', { method: 'POST' })
-                                .then(() => {
-                                    alert('Conversation terminée');
-                                    location.reload();
-                                })
-                                .catch(err => alert('Erreur: ' + err));
+                    // Fonction pour avertir les utilisateurs
+                    async function warnUsers(chatId) {
+                        if (confirm('⚠️ Envoyer un avertissement aux deux utilisateurs de cette conversation ?\\n\\nIls recevront un message d\\'avertissement sur Messenger.')) {
+                            try {
+                                const response = await fetch('/admin/chat/' + chatId + '/warn', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' }
+                                });
+                                
+                                const data = await response.json();
+                                
+                                if (data.success) {
+                                    alert('✅ ' + (data.message || 'Avertissement envoyé avec succès'));
+                                } else {
+                                    alert('❌ Erreur: ' + (data.error || 'Impossible d\\'envoyer l\\'avertissement'));
+                                }
+                            } catch (error) {
+                                console.error('Erreur:', error);
+                                alert('❌ Erreur réseau: ' + error.message);
+                            }
+                        }
+                    }
+                    
+                    // Fonction pour terminer un chat
+                    async function endChat(chatId) {
+                        if (confirm('🛑 Êtes-vous sûr de vouloir TERMINER cette conversation ?\\n\\nLes utilisateurs seront informés et la conversation sera fermée.')) {
+                            try {
+                                const response = await fetch('/admin/chat/' + chatId + '/end', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' }
+                                });
+                                
+                                const data = await response.json();
+                                
+                                if (data.success) {
+                                    alert('✅ ' + (data.message || 'Conversation terminée avec succès'));
+                                    setTimeout(() => location.reload(), 1000);
+                                } else {
+                                    alert('❌ Erreur: ' + (data.error || 'Impossible de terminer la conversation'));
+                                }
+                            } catch (error) {
+                                console.error('Erreur:', error);
+                                alert('❌ Erreur réseau: ' + error.message);
+                            }
                         }
                     }
                     
