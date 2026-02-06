@@ -716,7 +716,218 @@ app.get('/admin/reports-simple', async (req, res) => {
         res.status(500).send(`<h1>Erreur</h1><p>${error.message}</p><a href="/admin/dashboard-direct">Retour</a>`);
     }
 });
+// Route pour voir tous les feedbacks
+app.get('/admin/feedbacks', async (req, res) => {
+    try {
+        const { Feedback } = require('./models');
+        
+        const feedbacks = await Feedback.find()
+            .sort({ timestamp: -1 })
+            .limit(100)
+            .lean();
+        
+        let html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Feedbacks - Admin</title>
+                <style>
+                    body { 
+                        font-family: Arial; 
+                        padding: 20px; 
+                        background: #f0f2f5; 
+                    }
+                    .container { 
+                        max-width: 1200px; 
+                        margin: 0 auto; 
+                    }
+                    h1 { 
+                        color: #1877f2; 
+                        border-bottom: 2px solid #1877f2;
+                        padding-bottom: 10px;
+                    }
+                    .feedback-card {
+                        background: white;
+                        padding: 15px;
+                        margin: 10px 0;
+                        border-radius: 8px;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    }
+                    .feedback-header {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-bottom: 10px;
+                        font-weight: bold;
+                    }
+                    .feedback-type {
+                        display: inline-block;
+                        padding: 3px 8px;
+                        border-radius: 12px;
+                        font-size: 12px;
+                        color: white;
+                    }
+                    .type-bug { background: #f44336; }
+                    .type-suggestion { background: #4CAF50; }
+                    .type-compliment { background: #2196F3; }
+                    .type-complaint { background: #FF9800; }
+                    .type-other { background: #9E9E9E; }
+                    .status-pending { color: #FF9800; }
+                    .status-read { color: #2196F3; }
+                    .status-resolved { color: #4CAF50; }
+                    .feedback-message {
+                        background: #f8f9fa;
+                        padding: 10px;
+                        border-radius: 5px;
+                        margin: 10px 0;
+                    }
+                    .stats-box {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 15px;
+                        margin: 20px 0;
+                    }
+                    .stat-card {
+                        background: white;
+                        padding: 15px;
+                        border-radius: 8px;
+                        text-align: center;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    }
+                    .stat-number {
+                        font-size: 24px;
+                        font-weight: bold;
+                        color: #1877f2;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>📝 Gestion des Feedbacks</h1>
+        `;
+        
+        // Statistiques
+        const stats = {
+            total: feedbacks.length,
+            pending: feedbacks.filter(f => f.status === 'pending').length,
+            bugs: feedbacks.filter(f => f.type === 'bug').length,
+            suggestions: feedbacks.filter(f => f.type === 'suggestion').length,
+            compliments: feedbacks.filter(f => f.type === 'compliment').length
+        };
+        
+        html += `
+            <div class="stats-box">
+                <div class="stat-card">
+                    <div class="stat-number">${stats.total}</div>
+                    <div>Total Feedbacks</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${stats.pending}</div>
+                    <div>En attente</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${stats.bugs}</div>
+                    <div>Bugs reportés</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${stats.suggestions}</div>
+                    <div>Suggestions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${stats.compliments}</div>
+                    <div>Compliments</div>
+                </div>
+            </div>
+            
+            <h2>📋 Derniers Feedbacks</h2>
+        `;
+        
+        // Liste des feedbacks
+        for (const feedback of feedbacks) {
+            const date = new Date(feedback.timestamp).toLocaleString('fr-FR');
+            
+            html += `
+                <div class="feedback-card">
+                    <div class="feedback-header">
+                        <div>
+                            <span class="feedback-type type-${feedback.type}">${feedback.type.toUpperCase()}</span>
+                            Par: ${feedback.userPseudo} (${feedback.userId})
+                        </div>
+                        <div>
+                            <span class="status-${feedback.status}">${feedback.status}</span>
+                            ${date}
+                        </div>
+                    </div>
+                    <div class="feedback-message">
+                        ${feedback.message}
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <a href="/admin/feedback/${feedback._id}/read" style="margin-right: 10px;">Marquer comme lu</a>
+                        <a href="/admin/feedback/${feedback._id}/resolve">Marquer comme résolu</a>
+                    </div>
+                </div>
+            `;
+        }
+        
+        html += `
+                </div>
+            </body>
+            </html>
+        `;
+        
+        res.send(html);
+        
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
+// Route pour marquer un feedback comme lu
+app.get('/admin/feedback/:id/read', async (req, res) => {
+    try {
+        const { Feedback } = require('./models');
+        await Feedback.findByIdAndUpdate(req.params.id, { status: 'read' });
+        res.redirect('/admin/feedbacks');
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Route pour marquer un feedback comme résolu
+app.get('/admin/feedback/:id/resolve', async (req, res) => {
+    try {
+        const { Feedback } = require('./models');
+        await Feedback.findByIdAndUpdate(req.params.id, { status: 'resolved' });
+        res.redirect('/admin/feedbacks');
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API pour récupérer les feedbacks en JSON
+app.get('/api/feedbacks', async (req, res) => {
+    try {
+        const { Feedback } = require('./models');
+        const { type, status, limit = 50 } = req.query;
+        
+        const query = {};
+        if (type) query.type = type;
+        if (status) query.status = status;
+        
+        const feedbacks = await Feedback.find(query)
+            .sort({ timestamp: -1 })
+            .limit(parseInt(limit))
+            .lean();
+        
+        res.json({
+            success: true,
+            count: feedbacks.length,
+            feedbacks
+        });
+        
+    } catch (error) {
+        res.json({ success: false, error: error.message });
+    }
+});
 // ========================================
 // FONCTIONS D'ENVOI DE MESSAGES FACEBOOK
 // ========================================
