@@ -243,9 +243,8 @@ async cleanOldMessages(daysToKeep = 30) {
                 break;
 
             case '/pseudo':
-            case '/name':
-                await this.askForPseudo(senderId);
-                break;
+            await this.changePseudo(senderId, parts.slice(1).join(' '));
+            break;
 
             case '/stats':
             case '/profil':
@@ -377,6 +376,132 @@ async cleanOldMessages(daysToKeep = 30) {
         );
     }
 
+    // Méthode pour changer de pseudo
+async changePseudo(senderId, newPseudo) {
+    try {
+        // Vérifier si un pseudo a été fourni
+        if (!newPseudo || newPseudo.trim() === '') {
+            await this.fb.sendTextMessage(senderId,
+                "❌ Format incorrect !\n\n" +
+                "Utilisation : /pseudo VotreNouveauPseudo\n\n" +
+                "Exemple : /pseudo SuperChat123\n\n" +
+                "Règles :\n" +
+                "• Entre 3 et 20 caractères\n" +
+                "• Lettres, chiffres et underscores uniquement\n" +
+                "• Pas d'espaces (utilisez _ à la place)"
+            );
+            return;
+        }
+
+        // Nettoyer et valider le pseudo
+        newPseudo = newPseudo.trim();
+        
+        // Vérifications
+        if (newPseudo.length < 3) {
+            await this.fb.sendTextMessage(senderId,
+                "❌ Pseudo trop court !\n\n" +
+                "Le pseudo doit contenir au moins 3 caractères."
+            );
+            return;
+        }
+
+        if (newPseudo.length > 20) {
+            await this.fb.sendTextMessage(senderId,
+                "❌ Pseudo trop long !\n\n" +
+                "Le pseudo ne peut pas dépasser 20 caractères."
+            );
+            return;
+        }
+
+        // Vérifier les caractères autorisés (lettres, chiffres, underscores)
+        const pseudoRegex = /^[a-zA-Z0-9_]+$/;
+        if (!pseudoRegex.test(newPseudo)) {
+            await this.fb.sendTextMessage(senderId,
+                "❌ Caractères non autorisés !\n\n" +
+                "Le pseudo peut contenir uniquement :\n" +
+                "• Lettres (a-z, A-Z)\n" +
+                "• Chiffres (0-9)\n" +
+                "• Underscores (_)\n\n" +
+                "Pas d'espaces, pas de caractères spéciaux."
+            );
+            return;
+        }
+
+        // Vérifier si le pseudo est déjà pris
+        const existingUser = await User.findOne({ 
+            pseudo: newPseudo,
+            facebookId: { $ne: senderId } // Exclure l'utilisateur actuel
+        });
+
+        if (existingUser) {
+            await this.fb.sendTextMessage(senderId,
+                "❌ Ce pseudo est déjà pris !\n\n" +
+                "Choisissez un autre pseudo ou ajoutez des chiffres.\n\n" +
+                "Suggestions :\n" +
+                `• ${newPseudo}${Math.floor(Math.random() * 999)}\n` +
+                `• ${newPseudo}_${Math.floor(Math.random() * 99)}\n` +
+                `• Super_${newPseudo}`
+            );
+            return;
+        }
+
+        // Récupérer l'ancien pseudo
+        const user = await User.findOne({ facebookId: senderId });
+        const oldPseudo = user?.pseudo || 'Anonyme';
+
+        // Mettre à jour le pseudo
+        await User.findOneAndUpdate(
+            { facebookId: senderId },
+            { 
+                pseudo: newPseudo,
+                lastPseudoChange: new Date()
+            },
+            { upsert: true }
+        );
+
+        // Si l'utilisateur est en conversation, mettre à jour dans le chat actif
+        if (this.chatManager.isInChat(senderId)) {
+            const chatInfo = this.chatManager.getChatInfo(senderId);
+            if (chatInfo && chatInfo.chatId) {
+                // Mettre à jour le pseudo dans le document Chat
+                await Chat.findOneAndUpdate(
+                    { 
+                        _id: chatInfo.chatId,
+                        'participants.userId': senderId 
+                    },
+                    { 
+                        '$set': { 'participants.$.pseudo': newPseudo }
+                    }
+                );
+
+                // Notifier le partenaire du changement
+                await this.fb.sendTextMessage(chatInfo.partnerId,
+                    `📝 ${oldPseudo} a changé son pseudo en : ${newPseudo}`
+                );
+            }
+        }
+
+        // Message de confirmation
+        await this.fb.sendTextMessage(senderId,
+            "✅ PSEUDO CHANGÉ AVEC SUCCÈS !\n" +
+            "━━━━━━━━━━━━━━━━━━\n\n" +
+            `Ancien pseudo : ${oldPseudo}\n` +
+            `Nouveau pseudo : ${newPseudo}\n\n` +
+            "Votre nouveau pseudo sera utilisé dans toutes vos futures conversations.\n\n" +
+            "💡 Astuce : Tapez /profil pour voir vos infos"
+        );
+
+        console.log(`✅ Pseudo changé : ${oldPseudo} → ${newPseudo} (User: ${senderId})`);
+
+    } catch (error) {
+        console.error('Erreur changement pseudo:', error);
+        await this.fb.sendTextMessage(senderId,
+            "❌ Une erreur s'est produite lors du changement de pseudo.\n\n" +
+            "Veuillez réessayer plus tard."
+        );
+    }
+}
+    
     // Vérifier si on attend un pseudo
     async checkIfWaitingForPseudo(senderId, text) {
         const user = await User.findOne({ facebookId: senderId });
