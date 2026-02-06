@@ -13,11 +13,17 @@ require('./config/database');
 
 // Import des modèles et services
 const { User, Chat, Queue, Report, Stats } = require('./models');
-const MessageHandler = require('./handlers/messageHandler');
 const ChatManager = require('./handlers/chatManager');
-const chatManager = new ChatManager();
-chatManager.startAutoCleanup();
 const UserManager = require('./handlers/userManager');
+const MessageHandler = require('./handlers/messageHandler');
+
+// Création des instances dans le bon ordre
+const userManager = new UserManager();
+const chatManager = new ChatManager();
+const messageHandler = new MessageHandler(chatManager, userManager);
+
+// Démarrer le nettoyage automatique
+chatManager.startAutoCleanup();
 
 // Configuration
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN || 'VOTRE_TOKEN_ICI';
