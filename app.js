@@ -3189,7 +3189,7 @@ app.post('/webhook', async (req, res) => {
 // ========================================
 // PAGE DE GESTION DES UTILISATEURS
 // ========================================
-app.get('/admin/users-simple', async (req, res) => {
+app.get('/admin/users', async (req, res) => {
     try {
         let users = [];
         let stats = {
