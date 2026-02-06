@@ -720,7 +720,54 @@ app.get('/admin/reports-simple', async (req, res) => {
 // ========================================
 // FONCTIONS D'ENVOI DE MESSAGES FACEBOOK
 // ========================================
-
+// Route pour déclencher le nettoyage manuellement
+app.post('/admin/cleanup', async (req, res) => {
+    try {
+        const { days = 30, includeChats = false } = req.body;
+        const { Chat, Message, Queue } = require('./models');
+        
+        let results = {
+            messages: 0,
+            chats: 0,
+            queue: 0
+        };
+        
+        // Supprimer les vieux messages
+        const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        const deletedMessages = await Message.deleteMany({
+            timestamp: { $lt: cutoffDate }
+        });
+        results.messages = deletedMessages.deletedCount;
+        
+        // Optionnel : supprimer les vieux chats inactifs
+        if (includeChats) {
+            const deletedChats = await Chat.deleteMany({
+                isActive: false,
+                lastActivity: { $lt: cutoffDate }
+            });
+            results.chats = deletedChats.deletedCount;
+        }
+        
+        // Nettoyer la file d'attente
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const deletedQueue = await Queue.deleteMany({
+            joinedAt: { $lt: oneHourAgo }
+        });
+        results.queue = deletedQueue.deletedCount;
+        
+        res.json({
+            success: true,
+            message: 'Nettoyage effectué',
+            results
+        });
+        
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 // Fonction pour envoyer un message via l'API Facebook
 async function sendMessageToUser(userId, message) {
     const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
