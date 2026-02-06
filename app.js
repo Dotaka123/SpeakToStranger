@@ -1524,37 +1524,76 @@ app.get('/admin/reports-simple', async (req, res) => {
 // ROUTES API POUR LA GESTION DES CHATS
 // ========================================
 
-// Route pour voir les détails d'un chat
+// Route pour voir les détails d'un chat (version améliorée)
 app.get('/admin/chat/:chatId/details', async (req, res) => {
     try {
         const { chatId } = req.params;
         const { Chat } = require('./models');
         
+        // Chercher le chat par ID
         const chat = await Chat.findById(chatId).lean();
         
         if (!chat) {
-            return res.status(404).json({ 
-                success: false, 
-                error: 'Conversation non trouvée' 
+            // Si pas trouvé, retourner quand même une réponse
+            return res.json({
+                success: true,
+                chat: {
+                    id: chatId,
+                    participants: [],
+                    messageCount: 0,
+                    messages: [],
+                    isActive: false
+                }
             });
+        }
+        
+        // Formater les données du chat
+        const chatData = {
+            id: chat._id,
+            participants: chat.participants || [],
+            messageCount: chat.messageCount || 0,
+            messages: chat.messages || [],
+            startTime: chat.startedAt || chat.createdAt,
+            endTime: chat.endedAt,
+            isActive: chat.isActive || false,
+            userId1: chat.userId1,
+            userId2: chat.userId2
+        };
+        
+        // Si les participants ne sont pas dans le format attendu
+        if (!chatData.participants.length && (chat.userId1 || chat.userId2)) {
+            chatData.participants = [];
+            if (chat.userId1) {
+                chatData.participants.push({
+                    userId: chat.userId1,
+                    pseudo: chat.user1?.pseudo || 'Utilisateur 1'
+                });
+            }
+            if (chat.userId2) {
+                chatData.participants.push({
+                    userId: chat.userId2,
+                    pseudo: chat.user2?.pseudo || 'Utilisateur 2'
+                });
+            }
         }
         
         res.json({
             success: true,
-            chat: {
-                id: chat._id,
-                participants: chat.participants,
-                messageCount: chat.messageCount || 0,
-                messages: chat.messages || [],
-                startTime: chat.startTime,
-                isActive: chat.isActive
-            }
+            chat: chatData
         });
+        
     } catch (error) {
         console.error('Erreur détails chat:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
+        res.json({
+            success: false,
+            error: error.message,
+            chat: {
+                id: req.params.chatId,
+                participants: [],
+                messageCount: 0,
+                messages: [],
+                isActive: false
+            }
         });
     }
 });
