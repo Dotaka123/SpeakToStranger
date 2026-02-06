@@ -207,6 +207,59 @@ class ChatManager {
         }
     }
 
+    async handleMessage(senderId, recipientId, message) {
+    try {
+        const chat = await this.Chat.findOne({
+            $or: [
+                { userId1: senderId, userId2: recipientId },
+                { userId1: recipientId, userId2: senderId }
+            ],
+            isActive: true
+        });
+
+        if (!chat) {
+            return false;
+        }
+
+        // Incrémenter le compteur de messages
+        chat.messageCount = (chat.messageCount || 0) + 1;
+        chat.lastActivity = new Date();
+        
+        // IMPORTANT : Initialiser le tableau messages s'il n'existe pas
+        if (!chat.messages) {
+            chat.messages = [];
+        }
+        
+        // AJOUTER : Stocker le message dans le tableau
+        chat.messages.push({
+            senderId: senderId,
+            senderPseudo: senderId === chat.userId1 ? 
+                (chat.user1?.pseudo || 'Utilisateur 1') : 
+                (chat.user2?.pseudo || 'Utilisateur 2'),
+            recipientId: recipientId,
+            content: message,
+            text: message,  // Pour compatibilité
+            timestamp: new Date(),
+            type: 'text'
+        });
+        
+        // Limiter à 100 derniers messages pour éviter que ça devienne trop gros
+        if (chat.messages.length > 100) {
+            chat.messages = chat.messages.slice(-100);
+        }
+        
+        await chat.save();
+        
+        // Log pour debug
+        console.log(`📝 Message stocké - Chat: ${chat._id}, Total messages: ${chat.messages.length}`);
+        
+        return true;
+    } catch (error) {
+        console.error('Erreur handling message:', error);
+        return false;
+    }
+}
+
     // Transférer un message entre partenaires
     async relayMessage(senderId, message) {
         const chat = this.activeChats.get(senderId);
