@@ -116,7 +116,7 @@ app.get('/admin', auth.requireAdmin, async (req, res) => {
 });
 
 // ========================================
-// PAGE DES SIGNALEMENTS AMÉLIORÉE
+// PAGE DES SIGNALEMENTS CORRIGÉE
 // ========================================
 app.get('/admin/reports-simple', async (req, res) => {
     try {
@@ -234,14 +234,26 @@ app.get('/admin/reports-simple', async (req, res) => {
                         color: #c05621;
                     }
                     
+                    .btn-warn:hover {
+                        background: #fbd38d;
+                    }
+                    
                     .btn-block {
                         background: #fed7d7;
                         color: #c53030;
                     }
                     
+                    .btn-block:hover {
+                        background: #fc8181;
+                    }
+                    
                     .btn-resolve {
                         background: #c6f6d5;
                         color: #22543d;
+                    }
+                    
+                    .btn-resolve:hover {
+                        background: #9ae6b4;
                     }
                     
                     /* Modal styles */
@@ -383,6 +395,7 @@ app.get('/admin/reports-simple', async (req, res) => {
             const status = report.status || 'pending';
             const date = new Date(report.createdAt);
             
+            // Utiliser des data attributes pour éviter les problèmes d'apostrophes
             html += `
                 <tr>
                     <td>${date.toLocaleDateString('fr-FR')}</td>
@@ -391,12 +404,30 @@ app.get('/admin/reports-simple', async (req, res) => {
                     <td>${report.reason || 'Non spécifiée'}</td>
                     <td>${status}</td>
                     <td>
-                        <div class="action-buttons">
-                            ${status === 'pending' ? `
-                                <button class="action-btn btn-warn" onclick="openWarningModal('${report.reportedUserId}', '${report._id}')">⚠️ Avertir</button>
-                                <button class="action-btn btn-block" onclick="openBlockModal('${report.reportedUserId}', '${report._id}')">🚫 Bloquer</button>
-                                <button class="action-btn btn-resolve" onclick="resolveReport('${report._id}')">✅ Résoudre</button>
-                            ` : '✅ Résolu'}
+                        <div class="action-buttons">`;
+            
+            if (status === 'pending') {
+                // Utiliser des data attributes au lieu de passer des paramètres dans onclick
+                html += `
+                    <button class="action-btn btn-warn warning-btn" 
+                            data-userid="${report.reportedUserId}" 
+                            data-reportid="${report._id}">
+                        ⚠️ Avertir
+                    </button>
+                    <button class="action-btn btn-block block-btn" 
+                            data-userid="${report.reportedUserId}" 
+                            data-reportid="${report._id}">
+                        🚫 Bloquer
+                    </button>
+                    <button class="action-btn btn-resolve resolve-btn" 
+                            data-reportid="${report._id}">
+                        ✅ Résoudre
+                    </button>`;
+            } else {
+                html += '✅ Résolu';
+            }
+            
+            html += `
                         </div>
                     </td>
                 </tr>`;
@@ -434,7 +465,7 @@ app.get('/admin/reports-simple', async (req, res) => {
                             </div>
                             
                             <div class="modal-footer">
-                                <button type="button" class="action-btn btn-cancel" onclick="closeModal('warningModal')">Annuler</button>
+                                <button type="button" class="action-btn btn-cancel cancel-warn">Annuler</button>
                                 <button type="submit" class="action-btn btn-confirm">Envoyer l'avertissement</button>
                             </div>
                         </form>
@@ -466,7 +497,7 @@ app.get('/admin/reports-simple', async (req, res) => {
                             </div>
                             
                             <div class="modal-footer">
-                                <button type="button" class="action-btn btn-cancel" onclick="closeModal('blockModal')">Annuler</button>
+                                <button type="button" class="action-btn btn-cancel cancel-block">Annuler</button>
                                 <button type="submit" class="action-btn btn-confirm" style="background: #f56565;">Bloquer définitivement</button>
                             </div>
                         </form>
@@ -477,159 +508,198 @@ app.get('/admin/reports-simple', async (req, res) => {
                 <div id="toast" class="toast"></div>
                 
                 <script>
-                    // Fonction pour ouvrir le modal d'avertissement
-                    function openWarningModal(userId, reportId) {
-                        document.getElementById('warnUserId').value = userId;
-                        document.getElementById('warnReportId').value = reportId;
-                        document.getElementById('warningModal').classList.add('active');
-                    }
-                    
-                    // Fonction pour ouvrir le modal de blocage
-                    function openBlockModal(userId, reportId) {
-                        document.getElementById('blockUserId').value = userId;
-                        document.getElementById('blockReportId').value = reportId;
-                        document.getElementById('blockModal').classList.add('active');
-                    }
-                    
-                    // Fermer un modal
-                    function closeModal(modalId) {
-                        document.getElementById(modalId).classList.remove('active');
-                    }
-                    
-                    // Afficher une notification toast
-                    function showToast(message, type = 'success') {
-                        const toast = document.getElementById('toast');
-                        toast.textContent = message;
-                        toast.className = 'toast ' + type + ' show';
-                        setTimeout(() => {
-                            toast.classList.remove('show');
-                        }, 3000);
-                    }
-                    
-                    // Gestionnaire du formulaire d'avertissement
-                    document.getElementById('warningForm').addEventListener('submit', async (e) => {
-                        e.preventDefault();
+                    // Attacher les événements après le chargement du DOM
+                    document.addEventListener('DOMContentLoaded', function() {
                         
-                        const userId = document.getElementById('warnUserId').value;
-                        const reportId = document.getElementById('warnReportId').value;
-                        const warnType = document.getElementById('warnType').value;
-                        const customMessage = document.getElementById('warnMessage').value;
-                        
-                        let reason = '';
-                        switch(warnType) {
-                            case 'general': reason = 'Comportement inapproprié'; break;
-                            case 'language': reason = 'Langage offensant'; break;
-                            case 'spam': reason = 'Spam ou publicité non sollicitée'; break;
-                            case 'harassment': reason = 'Harcèlement d\'autres utilisateurs'; break;
-                            case 'custom': reason = customMessage || 'Violation des règles'; break;
+                        // Fonction pour ouvrir le modal d'avertissement
+                        function openWarningModal(userId, reportId) {
+                            document.getElementById('warnUserId').value = userId;
+                            document.getElementById('warnReportId').value = reportId;
+                            document.getElementById('warningModal').classList.add('active');
                         }
                         
-                        try {
-                            const response = await fetch('/admin/user/' + userId + '/warn', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ reason })
-                            });
-                            
-                            const data = await response.json();
-                            
-                            if (data.success) {
-                                // Résoudre le signalement
-                                await fetch('/admin/report/' + reportId + '/resolve', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ action: 'warn', userId, reason })
-                                });
-                                
-                                showToast('✅ Avertissement envoyé avec succès !', 'success');
-                                closeModal('warningModal');
-                                setTimeout(() => location.reload(), 2000);
-                            } else {
-                                showToast('❌ Erreur: ' + (data.error || 'Impossible d\\'envoyer l\\'avertissement'), 'error');
+                        // Fonction pour ouvrir le modal de blocage
+                        function openBlockModal(userId, reportId) {
+                            document.getElementById('blockUserId').value = userId;
+                            document.getElementById('blockReportId').value = reportId;
+                            document.getElementById('blockModal').classList.add('active');
+                        }
+                        
+                        // Fermer un modal
+                        function closeModal(modalId) {
+                            document.getElementById(modalId).classList.remove('active');
+                        }
+                        
+                        // Afficher une notification toast
+                        function showToast(message, type = 'success') {
+                            const toast = document.getElementById('toast');
+                            toast.textContent = message;
+                            toast.className = 'toast ' + type + ' show';
+                            setTimeout(() => {
+                                toast.classList.remove('show');
+                            }, 3000);
+                        }
+                        
+                        // Résoudre un signalement sans action
+                        async function resolveReport(reportId) {
+                            if (confirm('Marquer ce signalement comme résolu sans action ?')) {
+                                try {
+                                    const response = await fetch('/admin/report/' + reportId + '/resolve', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ action: 'resolved' })
+                                    });
+                                    
+                                    if (response.ok) {
+                                        showToast('✅ Signalement résolu', 'success');
+                                        setTimeout(() => location.reload(), 2000);
+                                    } else {
+                                        showToast('❌ Erreur lors de la résolution', 'error');
+                                    }
+                                } catch (error) {
+                                    showToast('❌ Erreur: ' + error.message, 'error');
+                                }
                             }
-                        } catch (error) {
-                            showToast('❌ Erreur réseau: ' + error.message, 'error');
-                        }
-                    });
-                    
-                    // Gestionnaire du formulaire de blocage
-                    document.getElementById('blockForm').addEventListener('submit', async (e) => {
-                        e.preventDefault();
-                        
-                        if (!confirm('Êtes-vous sûr de vouloir bloquer cet utilisateur définitivement ?')) {
-                            return;
                         }
                         
-                        const userId = document.getElementById('blockUserId').value;
-                        const reportId = document.getElementById('blockReportId').value;
-                        const blockReason = document.getElementById('blockReason').value;
-                        const blockDetails = document.getElementById('blockDetails').value;
-                        
-                        let reason = '';
-                        switch(blockReason) {
-                            case 'violation': reason = 'Violation grave des conditions d\\'utilisation'; break;
-                            case 'repeated': reason = 'Infractions répétées malgré les avertissements'; break;
-                            case 'harassment': reason = 'Harcèlement grave d\\'autres utilisateurs'; break;
-                            case 'illegal': reason = 'Partage de contenu illégal'; break;
-                            case 'custom': reason = blockDetails || 'Violation des règles communautaires'; break;
-                        }
-                        
-                        try {
-                            const response = await fetch('/admin/user/' + userId + '/block', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ reason })
+                        // Attacher les événements aux boutons d'avertissement
+                        document.querySelectorAll('.warning-btn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const userId = this.getAttribute('data-userid');
+                                const reportId = this.getAttribute('data-reportid');
+                                openWarningModal(userId, reportId);
                             });
+                        });
+                        
+                        // Attacher les événements aux boutons de blocage
+                        document.querySelectorAll('.block-btn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const userId = this.getAttribute('data-userid');
+                                const reportId = this.getAttribute('data-reportid');
+                                openBlockModal(userId, reportId);
+                            });
+                        });
+                        
+                        // Attacher les événements aux boutons de résolution
+                        document.querySelectorAll('.resolve-btn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const reportId = this.getAttribute('data-reportid');
+                                resolveReport(reportId);
+                            });
+                        });
+                        
+                        // Boutons d'annulation
+                        document.querySelectorAll('.cancel-warn').forEach(btn => {
+                            btn.addEventListener('click', () => closeModal('warningModal'));
+                        });
+                        
+                        document.querySelectorAll('.cancel-block').forEach(btn => {
+                            btn.addEventListener('click', () => closeModal('blockModal'));
+                        });
+                        
+                        // Gestionnaire du formulaire d'avertissement
+                        document.getElementById('warningForm').addEventListener('submit', async (e) => {
+                            e.preventDefault();
                             
-                            const data = await response.json();
+                            const userId = document.getElementById('warnUserId').value;
+                            const reportId = document.getElementById('warnReportId').value;
+                            const warnType = document.getElementById('warnType').value;
+                            const customMessage = document.getElementById('warnMessage').value;
                             
-                            if (data.success) {
-                                // Résoudre le signalement
-                                await fetch('/admin/report/' + reportId + '/resolve', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ action: 'block', userId, reason })
-                                });
-                                
-                                showToast('✅ Utilisateur bloqué avec succès !', 'success');
-                                closeModal('blockModal');
-                                setTimeout(() => location.reload(), 2000);
-                            } else {
-                                showToast('❌ Erreur: ' + (data.error || 'Impossible de bloquer l\\'utilisateur'), 'error');
+                            let reason = '';
+                            switch(warnType) {
+                                case 'general': reason = 'Comportement inapproprié'; break;
+                                case 'language': reason = 'Langage offensant'; break;
+                                case 'spam': reason = 'Spam ou publicité non sollicitée'; break;
+                                case 'harassment': reason = 'Harcèlement d\\'autres utilisateurs'; break;
+                                case 'custom': reason = customMessage || 'Violation des règles'; break;
                             }
-                        } catch (error) {
-                            showToast('❌ Erreur réseau: ' + error.message, 'error');
-                        }
-                    });
-                    
-                    // Résoudre un signalement sans action
-                    async function resolveReport(reportId) {
-                        if (confirm('Marquer ce signalement comme résolu sans action ?')) {
+                            
                             try {
-                                const response = await fetch('/admin/report/' + reportId + '/resolve', {
+                                const response = await fetch('/admin/user/' + userId + '/warn', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ action: 'resolved' })
+                                    body: JSON.stringify({ reason })
                                 });
                                 
-                                if (response.ok) {
-                                    showToast('✅ Signalement résolu', 'success');
+                                const data = await response.json();
+                                
+                                if (data.success) {
+                                    // Résoudre le signalement
+                                    await fetch('/admin/report/' + reportId + '/resolve', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ action: 'warn', userId, reason })
+                                    });
+                                    
+                                    showToast('✅ Avertissement envoyé avec succès !', 'success');
+                                    closeModal('warningModal');
                                     setTimeout(() => location.reload(), 2000);
                                 } else {
-                                    showToast('❌ Erreur lors de la résolution', 'error');
+                                    showToast('❌ Erreur: ' + (data.error || 'Impossible d\\'envoyer l\\'avertissement'), 'error');
                                 }
                             } catch (error) {
-                                showToast('❌ Erreur: ' + error.message, 'error');
+                                showToast('❌ Erreur réseau: ' + error.message, 'error');
                             }
-                        }
-                    }
-                    
-                    // Fermer les modals en cliquant en dehors
-                    document.querySelectorAll('.modal').forEach(modal => {
-                        modal.addEventListener('click', (e) => {
-                            if (e.target === modal) {
-                                modal.classList.remove('active');
+                        });
+                        
+                        // Gestionnaire du formulaire de blocage
+                        document.getElementById('blockForm').addEventListener('submit', async (e) => {
+                            e.preventDefault();
+                            
+                            if (!confirm('Êtes-vous sûr de vouloir bloquer cet utilisateur définitivement ?')) {
+                                return;
                             }
+                            
+                            const userId = document.getElementById('blockUserId').value;
+                            const reportId = document.getElementById('blockReportId').value;
+                            const blockReason = document.getElementById('blockReason').value;
+                            const blockDetails = document.getElementById('blockDetails').value;
+                            
+                            let reason = '';
+                            switch(blockReason) {
+                                case 'violation': reason = 'Violation grave des conditions d\\'utilisation'; break;
+                                case 'repeated': reason = 'Infractions répétées malgré les avertissements'; break;
+                                case 'harassment': reason = 'Harcèlement grave d\\'autres utilisateurs'; break;
+                                case 'illegal': reason = 'Partage de contenu illégal'; break;
+                                case 'custom': reason = blockDetails || 'Violation des règles communautaires'; break;
+                            }
+                            
+                            try {
+                                const response = await fetch('/admin/user/' + userId + '/block', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ reason })
+                                });
+                                
+                                const data = await response.json();
+                                
+                                if (data.success) {
+                                    // Résoudre le signalement
+                                    await fetch('/admin/report/' + reportId + '/resolve', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ action: 'block', userId, reason })
+                                    });
+                                    
+                                    showToast('✅ Utilisateur bloqué avec succès !', 'success');
+                                    closeModal('blockModal');
+                                    setTimeout(() => location.reload(), 2000);
+                                } else {
+                                    showToast('❌ Erreur: ' + (data.error || 'Impossible de bloquer l\\'utilisateur'), 'error');
+                                }
+                            } catch (error) {
+                                showToast('❌ Erreur réseau: ' + error.message, 'error');
+                            }
+                        });
+                        
+                        // Fermer les modals en cliquant en dehors
+                        document.querySelectorAll('.modal').forEach(modal => {
+                            modal.addEventListener('click', (e) => {
+                                if (e.target === modal) {
+                                    modal.classList.remove('active');
+                                }
+                            });
                         });
                     });
                 </script>
