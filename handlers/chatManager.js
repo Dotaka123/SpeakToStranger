@@ -34,158 +34,165 @@ class ChatManager {
     }
 
     async addToQueue(userId, userPreferences = {}) {
-        try {
-            console.log(`🔄 Tentative d'ajout à la queue: ${userId}`);
-            
-            // NOUVEAU : Vérifier si déjà en traitement
-            if (this.isBeingProcessed(userId)) {
-                console.log(`⚠️ ${userId} déjà en cours de traitement`);
-                return;
-            }
-            
-            // Marquer comme en traitement
-            this.processingUsers.add(userId);
-            
-            // Vérifier si déjà en file d'attente
-            if (this.isInQueue(userId)) {
-                this.processingUsers.delete(userId);
-                await this.fb.sendTextMessage(userId, 
-                    "🔄 Vous êtes déjà en recherche d'un partenaire...\n\n" +
-                    "Patience, nous cherchons quelqu'un pour vous !"
-                );
-                return;
-            }
-
-            // Vérifier si déjà en conversation
-            if (this.isInChat(userId)) {
-                this.processingUsers.delete(userId);
-                await this.fb.sendTextMessage(userId, 
-                    "💬 Vous êtes déjà en conversation !\n\n" +
-                    "Tapez /stop pour terminer votre conversation actuelle."
-                );
-                return;
-            }
-
-            // Récupérer les infos de l'utilisateur
-            const user = await User.findOne({ facebookId: userId });
-            if (!user) {
-                this.processingUsers.delete(userId);
-                await this.fb.sendTextMessage(userId, 
-                    "❌ Profil utilisateur non trouvé.\n\n" +
-                    "Veuillez réessayer."
-                );
-                return;
-            }
-
-            const pseudo = user.pseudo || 'Anonyme';
-
-            // SECTION CRITIQUE - Un seul thread à la fois
-            await this.acquireMatchingLock();
-            
-            try {
-                // Re-vérifier après avoir acquis le verrou
-                if (this.isInQueue(userId) || this.isInChat(userId)) {
-                    console.log(`⚠️ ${userId} déjà en queue ou en chat après verrou`);
-                    return;
-                }
-                
-                // Chercher un partenaire disponible IMMÉDIATEMENT
-                let matchFound = false;
-                let matchedPartner = null;
-                
-                // Parcourir la file pour trouver un match
-                for (let i = 0; i < this.waitingQueue.length; i++) {
-                    const potentialPartner = this.waitingQueue[i];
-                    
-                    // Vérifications de sécurité
-                    if (potentialPartner.userId === userId) continue;
-                    if (this.isInChat(potentialPartner.userId)) continue;
-                    if (this.isBeingProcessed(potentialPartner.userId)) continue;
-                    
-                    // Match trouvé !
-                    matchedPartner = potentialPartner;
-                    matchFound = true;
-                    
-                    // Retirer le partenaire de la queue IMMÉDIATEMENT
-                    this.waitingQueue.splice(i, 1);
-                    
-                    // Marquer le partenaire comme en traitement
-                    this.processingUsers.add(matchedPartner.userId);
-                    
-                    console.log(`💘 Match immédiat: ${pseudo} ↔ ${matchedPartner.pseudo}`);
-                    break;
-                }
-                
-                if (matchFound && matchedPartner) {
-                    // Créer le chat AVANT de libérer le verrou
-                    await this.createChatSafe(
-                        { userId, pseudo },
-                        matchedPartner
-                    );
-                    
-                    // Retirer de la base de données
-                    await Queue.deleteMany({
-                        userId: { $in: [userId, matchedPartner.userId] }
-                    });
-                    
-                } else {
-                    // Pas de match, ajouter à la queue
-                    const queueEntry = {
-                        userId,
-                        pseudo,
-                        preferences: userPreferences,
-                        joinedAt: new Date()
-                    };
-                    
-                    this.waitingQueue.push(queueEntry);
-                    
-                    // Sauvegarder en base de données
-                    await Queue.create(queueEntry);
-                    
-                    const queuePosition = this.waitingQueue.length;
-                    
-                    // Message avec position
-                    let waitMessage = "🔍 RECHERCHE EN COURS...\n" +
-                                     "━━━━━━━━━━━━━━━━━━\n\n" +
-                                     "Vous êtes dans la file d'attente.\n";
-                    
-                    if (queuePosition > 1) {
-                        waitMessage += `📊 Position : ${queuePosition}\n`;
-                        waitMessage += `👥 ${queuePosition - 1} personne(s) devant vous\n\n`;
-                    } else {
-                        waitMessage += "Vous êtes le premier ! ⭐\n\n";
-                    }
-                    
-                    waitMessage += "⏳ Patientez, quelqu'un va bientôt arriver...\n\n" +
-                                  "💡 Tapez /stop pour annuler";
-                    
-                    await this.fb.sendTextMessage(userId, waitMessage);
-                    
-                    console.log(`📋 Ajouté à la queue: ${pseudo} (Position ${queuePosition})`);
-                }
-                
-            } finally {
-                // Libérer le verrou et retirer du traitement
-                this.releaseMatchingLock();
-                this.processingUsers.delete(userId);
-                
-                // Retirer le partenaire du traitement si match
-                if (matchedPartner) {
-                    this.processingUsers.delete(matchedPartner.userId);
-                }
-            }
-
-        } catch (error) {
-            console.error('Erreur ajout file d\'attente:', error);
-            this.processingUsers.delete(userId);
-            this.releaseMatchingLock();
-            
-            await this.fb.sendTextMessage(userId, 
-                "❌ Une erreur s'est produite.\n\n" +
-                "Veuillez réessayer avec /chercher"
-            );
+    try {
+        console.log(`🔄 Tentative d'ajout à la queue: ${userId}`);
+        
+        // NOUVEAU : Vérifier si déjà en traitement
+        if (this.isBeingProcessed(userId)) {
+            console.log(`⚠️ ${userId} déjà en cours de traitement`);
+            return;
         }
+        
+        // Marquer comme en traitement
+        this.processingUsers.add(userId);
+        
+        // Vérifier si déjà en file d'attente
+        if (this.isInQueue(userId)) {
+            this.processingUsers.delete(userId);
+            await this.fb.sendTextMessage(userId, 
+                "🔄 Vous êtes déjà en recherche d'un partenaire...\n\n" +
+                "Patience, nous cherchons quelqu'un pour vous !"
+            );
+            return;
+        }
+
+        // Vérifier si déjà en conversation
+        if (this.isInChat(userId)) {
+            this.processingUsers.delete(userId);
+            await this.fb.sendTextMessage(userId, 
+                "💬 Vous êtes déjà en conversation !\n\n" +
+                "Tapez /stop pour terminer votre conversation actuelle."
+            );
+            return;
+        }
+
+        // Récupérer les infos de l'utilisateur
+        const user = await User.findOne({ facebookId: userId });
+        if (!user) {
+            this.processingUsers.delete(userId);
+            await this.fb.sendTextMessage(userId, 
+                "❌ Profil utilisateur non trouvé.\n\n" +
+                "Veuillez réessayer."
+            );
+            return;
+        }
+
+        const pseudo = user.pseudo || 'Anonyme';
+
+        // SECTION CRITIQUE - Un seul thread à la fois
+        await this.acquireMatchingLock();
+        
+        // DÉCLARER matchedPartner ICI, en dehors du try
+        let matchedPartner = null;
+        
+        try {
+            // Re-vérifier après avoir acquis le verrou
+            if (this.isInQueue(userId) || this.isInChat(userId)) {
+                console.log(`⚠️ ${userId} déjà en queue ou en chat après verrou`);
+                return;
+            }
+            
+            // Chercher un partenaire disponible IMMÉDIATEMENT
+            let matchFound = false;
+            
+            // Parcourir la file pour trouver un match
+            for (let i = 0; i < this.waitingQueue.length; i++) {
+                const potentialPartner = this.waitingQueue[i];
+                
+                // Vérifications de sécurité
+                if (potentialPartner.userId === userId) continue;
+                if (this.isInChat(potentialPartner.userId)) continue;
+                if (this.isBeingProcessed(potentialPartner.userId)) continue;
+                
+                // Match trouvé !
+                matchedPartner = potentialPartner;
+                matchFound = true;
+                
+                // Retirer le partenaire de la queue IMMÉDIATEMENT
+                this.waitingQueue.splice(i, 1);
+                
+                // Marquer le partenaire comme en traitement
+                this.processingUsers.add(matchedPartner.userId);
+                
+                console.log(`💘 Match immédiat: ${pseudo} ↔ ${matchedPartner.pseudo}`);
+                break;
+            }
+            
+            if (matchFound && matchedPartner) {
+                // Créer le chat AVANT de libérer le verrou
+                await this.createChatSafe(
+                    { userId, pseudo },
+                    matchedPartner
+                );
+                
+                // Retirer de la base de données
+                await Queue.deleteMany({
+                    userId: { $in: [userId, matchedPartner.userId] }
+                });
+                
+            } else {
+                // Pas de match, ajouter à la queue
+                const queueEntry = {
+                    userId,
+                    pseudo,
+                    preferences: userPreferences,
+                    joinedAt: new Date()
+                };
+                
+                this.waitingQueue.push(queueEntry);
+                
+                // Sauvegarder en base de données
+                try {
+                    await Queue.create(queueEntry);
+                } catch (dbError) {
+                    console.error('Erreur sauvegarde queue:', dbError);
+                    // Continuer même si la sauvegarde échoue
+                }
+                
+                const queuePosition = this.waitingQueue.length;
+                
+                // Message avec position
+                let waitMessage = "🔍 RECHERCHE EN COURS...\n" +
+                                 "━━━━━━━━━━━━━━━━━━\n\n" +
+                                 "Vous êtes dans la file d'attente.\n";
+                
+                if (queuePosition > 1) {
+                    waitMessage += `📊 Position : ${queuePosition}\n`;
+                    waitMessage += `👥 ${queuePosition - 1} personne(s) devant vous\n\n`;
+                } else {
+                    waitMessage += "Vous êtes le premier ! ⭐\n\n";
+                }
+                
+                waitMessage += "⏳ Patientez, quelqu'un va bientôt arriver...\n\n" +
+                              "💡 Tapez /stop pour annuler";
+                
+                await this.fb.sendTextMessage(userId, waitMessage);
+                
+                console.log(`📋 Ajouté à la queue: ${pseudo} (Position ${queuePosition})`);
+            }
+            
+        } finally {
+            // Libérer le verrou et retirer du traitement
+            this.releaseMatchingLock();
+            this.processingUsers.delete(userId);
+            
+            // Retirer le partenaire du traitement si match
+            if (matchedPartner) {
+                this.processingUsers.delete(matchedPartner.userId);
+            }
+        }
+
+    } catch (error) {
+        console.error('Erreur ajout file d\'attente:', error);
+        this.processingUsers.delete(userId);
+        this.releaseMatchingLock();
+        
+        await this.fb.sendTextMessage(userId, 
+            "❌ Une erreur s'est produite.\n\n" +
+            "Veuillez réessayer avec /chercher"
+        );
     }
+}
 
     // Méthodes de verrouillage pour éviter la concurrence
     async acquireMatchingLock() {
