@@ -1,27 +1,34 @@
 const mongoose = require('mongoose');
 
-// Schéma Utilisateur
 const userSchema = new mongoose.Schema({
     facebookId: { type: String, required: true, unique: true },
-    pseudo: { type: String, required: true },
+    pseudo: { type: String, default: 'Anonyme' }, // ⚠️ Retirer "required: true" ou ajouter une valeur par défaut
     createdAt: { type: Date, default: Date.now },
     totalConversations: { type: Number, default: 0 },
     totalMessages: { type: Number, default: 0 },
     rating: { type: Number, default: 5 },
     ratingCount: { type: Number, default: 0 },
     isBlocked: { type: Boolean, default: false },
+    blockedAt: { type: Date }, // Ajouter ce champ
+    blockReason: { type: String }, // Ajouter ce champ
+    warningCount: { type: Number, default: 0 }, // Ajouter ce champ
+    warnings: [{ // Ajouter ce champ
+        date: { type: Date },
+        reason: { type: String },
+        sentBy: { type: String }
+    }],
     blockedUsers: [{ type: String }],
     interests: [{ type: String }],
     language: { type: String, default: 'fr' },
     status: { 
         type: String, 
-        enum: ['offline', 'online', 'waiting', 'chatting'], 
+        enum: ['offline', 'online', 'waiting', 'chatting', 'blocked'], // Ajouter 'blocked'
         default: 'offline' 
     },
     currentChat: { type: mongoose.Schema.Types.ObjectId, ref: 'Chat' },
-    lastActivity: { type: Date, default: Date.now }
+    lastActivity: { type: Date, default: Date.now },
+    waitingForPseudo: { type: Boolean, default: false } // Ajouter ce champ
 });
-
 // Schéma Conversation
 const chatSchema = new mongoose.Schema({
     participants: [{
