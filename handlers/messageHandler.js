@@ -2,14 +2,9 @@
 const facebookAPI = require('../services/facebookAPI');
 const { User, Chat, Report, Stats, Message } = require('../models');
 
-class MessageHandler {
-    constructor(chatManager, userManager) {
-        this.chatManager = chatManager;
-        this.userManager = userManager;
-        this.fb = facebookAPI;
-    }
-
-    // Générateur de pseudos aléatoires
+// ========================================
+// GÉNÉRATEUR DE PSEUDOS - EN DEHORS DE LA CLASSE
+// ========================================
 const ADJECTIVES = [
     'Brave', 'Joyeux', 'Sage', 'Brillant', 'Mystique', 'Rapide', 'Calme', 
     'Fou', 'Noble', 'Vif', 'Doux', 'Fort', 'Agile', 'Rusé', 'Jovial',
@@ -50,6 +45,17 @@ async function generateUniquePseudo() {
     // Si on n'arrive pas à trouver un pseudo unique, ajouter un timestamp
     return `User${Date.now()}`;
 }
+
+// ========================================
+// CLASSE MESSAGE HANDLER
+// ========================================
+class MessageHandler {
+    constructor(chatManager, userManager) {
+        this.chatManager = chatManager;
+        this.userManager = userManager;
+        this.fb = facebookAPI;
+    }
+
     // Gérer les événements Facebook
     async handleEvent(event) {
         try {
@@ -66,39 +72,36 @@ async function generateUniquePseudo() {
     }
 
     // Gérer les messages entrants
-// Dans handleMessage() de messageHandler.js
-async handleMessage(senderId, message) {
-    try {
-        // Marquer comme vu
-        await this.fb.markSeen(senderId);
-        
-        // Vérifier/récupérer l'utilisateur
-        let user = await User.findOne({ facebookId: senderId });
-        
-        if (!user) {
-            // GÉNÉRER UN PSEUDO ALÉATOIRE UNIQUE
-            const randomPseudo = await generateUniquePseudo();
+    async handleMessage(senderId, message) {
+        try {
+            // Marquer comme vu
+            await this.fb.markSeen(senderId);
             
-            // Créer un nouvel utilisateur avec un pseudo unique
-            user = await User.create({
-                facebookId: senderId,
-                pseudo: randomPseudo, // <-- Pseudo unique au lieu de 'Anonyme'
-                createdAt: new Date(),
-                lastActivity: new Date(),
-                status: 'online',
-                isBlocked: false,
-                totalConversations: 0,
-                totalMessages: 0
-            });
+            // Vérifier/récupérer l'utilisateur
+            let user = await User.findOne({ facebookId: senderId });
             
-            console.log(`🆕 Nouvel utilisateur créé: ${randomPseudo} (${senderId})`);
-            
-            // Message de bienvenue personnalisé avec le pseudo
-            await this.sendWelcomeMessageWithPseudo(senderId, randomPseudo);
-            return;
-        }
-        
-        // ... reste du code
+            if (!user) {
+                // GÉNÉRER UN PSEUDO ALÉATOIRE UNIQUE
+                const randomPseudo = await generateUniquePseudo();
+                
+                // Créer un nouvel utilisateur avec un pseudo unique
+                user = await User.create({
+                    facebookId: senderId,
+                    pseudo: randomPseudo, // Pseudo unique au lieu de 'Anonyme'
+                    createdAt: new Date(),
+                    lastActivity: new Date(),
+                    status: 'online',
+                    isBlocked: false,
+                    totalConversations: 0,
+                    totalMessages: 0
+                });
+                
+                console.log(`🆕 Nouvel utilisateur créé: ${randomPseudo} (${senderId})`);
+                
+                // Message de bienvenue personnalisé avec le pseudo
+                await this.sendWelcomeMessageWithPseudo(senderId, randomPseudo);
+                return;
+            }
 
             // VÉRIFICATION DU BLOCAGE
             if (user.isBlocked === true) {
@@ -291,26 +294,50 @@ async handleMessage(senderId, message) {
         }
     }
 
-// Nouveau message de bienvenue avec pseudo
-async sendWelcomeMessageWithPseudo(senderId, pseudo) {
-    const welcomeMessage = 
-        "🎭 Bienvenue sur SpeakToStranger !\n" +
-        "━━━━━━━━━━━━━━━━━━\n\n" +
-        `✨ Votre pseudo : ${pseudo}\n\n` +
-        "💡 Vous pouvez le changer avec :\n" +
-        "/pseudo NouveauNom\n\n" +
-        "📝 COMMANDES DISPONIBLES :\n" +
-        "━━━━━━━━━━━━━━━━━━\n" +
-        "/chercher - 🔍 Trouver un partenaire\n" +
-        "/stop - 🛑 Quitter la conversation\n" +
-        "/pseudo - ✏️ Changer votre pseudo\n" +
-        "/profil - 👤 Voir votre profil\n" +
-        "/stats - 📊 Voir vos statistiques\n" +
-        "/help - ❓ Afficher l'aide\n\n" +
-        "🎯 Tapez /chercher pour rencontrer quelqu'un !";
+    // Nouveau message de bienvenue avec pseudo
+    async sendWelcomeMessageWithPseudo(senderId, pseudo) {
+        const welcomeMessage = 
+            "🎭 Bienvenue sur SpeakToStranger !\n" +
+            "━━━━━━━━━━━━━━━━━━\n\n" +
+            `✨ Votre pseudo : ${pseudo}\n\n` +
+            "💡 Vous pouvez le changer avec :\n" +
+            "/pseudo NouveauNom\n\n" +
+            "📝 COMMANDES DISPONIBLES :\n" +
+            "━━━━━━━━━━━━━━━━━━\n" +
+            "/chercher - 🔍 Trouver un partenaire\n" +
+            "/stop - 🛑 Quitter la conversation\n" +
+            "/pseudo - ✏️ Changer votre pseudo\n" +
+            "/profil - 👤 Voir votre profil\n" +
+            "/stats - 📊 Voir vos statistiques\n" +
+            "/help - ❓ Afficher l'aide\n\n" +
+            "🎯 Tapez /chercher pour rencontrer quelqu'un !";
 
-    await this.fb.sendTextMessage(senderId, welcomeMessage);
-}
+        await this.fb.sendTextMessage(senderId, welcomeMessage);
+    }
+
+    // Message de bienvenue normal (pour les anciens utilisateurs)
+    async sendWelcomeMessage(senderId) {
+        const user = await User.findOne({ facebookId: senderId });
+        const pseudo = user?.pseudo || 'Anonyme';
+        
+        const welcomeMessage = 
+            "🎭 Bienvenue sur SpeakToStranger !\n\n" +
+            `Votre pseudo actuel : ${pseudo}\n\n` +
+            "Je suis votre assistant pour vous connecter avec des inconnus.\n\n" +
+            "📝 COMMANDES DISPONIBLES :\n" +
+            "━━━━━━━━━━━━━━━━━━\n" +
+            "/chercher - 🔍 Trouver un partenaire\n" +
+            "/stop - 🛑 Quitter la conversation\n" +
+            "/pseudo - ✏️ Changer votre pseudo\n" +
+            "/profil - 👤 Voir votre profil\n" +
+            "/stats - 📊 Voir vos statistiques\n" +
+            "/infos - 📈 Statistiques du bot\n" +
+            "/signaler - 🚨 Signaler un utilisateur\n" +
+            "/help - ❓ Afficher cette aide\n\n" +
+            "🎯 Commencez par taper /chercher pour trouver quelqu'un !";
+
+        await this.fb.sendTextMessage(senderId, welcomeMessage);
+    }
 
     // Afficher l'aide
     async showHelp(senderId) {
@@ -339,6 +366,12 @@ async sendWelcomeMessageWithPseudo(senderId, pseudo) {
         await this.fb.sendTextMessage(senderId, helpMessage);
     }
 
+    // ... TOUTES VOS AUTRES MÉTHODES RESTENT IDENTIQUES ...
+    // (handleStop, changePseudo, showProfile, showUserStats, showBotStats, handleReport, handleFeedback, handlePostback)
+    
+    // Je ne les recopie pas car elles restent exactement les mêmes
+    // Continuez avec votre code existant pour ces méthodes
+    
     // Gérer /stop
     async handleStop(senderId) {
         try {
@@ -458,7 +491,7 @@ async sendWelcomeMessageWithPseudo(senderId, pseudo) {
                 "✅ PSEUDO CHANGÉ AVEC SUCCÈS !\n" +
                 "━━━━━━━━━━━━━━━━━━\n\n" +
                 `Ancien : ${oldPseudo}\n` +
-                `Nouveau : ${newPseudo}\n\n` +
+                `Nouveau : ${newPseudo}\n\n" +
                 "💡 Tapez /profil pour voir vos infos"
             );
 
@@ -594,236 +627,236 @@ async sendWelcomeMessageWithPseudo(senderId, pseudo) {
         }
     }
 
-// Gérer les signalements
-async handleReport(senderId) {
-    try {
-        // Vérifier si l'utilisateur est en conversation
-        if (!this.chatManager.isInChat(senderId)) {
-            await this.fb.sendTextMessage(senderId,
-                "❌ Vous devez être en conversation pour signaler quelqu'un.\n\n" +
-                "Vous ne pouvez signaler qu'un utilisateur avec qui vous chattez actuellement."
-            );
-            return;
-        }
-
-        const chatInfo = this.chatManager.getChatInfo(senderId);
-        
-        if (!chatInfo || !chatInfo.partnerId) {
-            await this.fb.sendTextMessage(senderId,
-                "❌ Erreur : impossible de récupérer les informations de la conversation."
-            );
-            return;
-        }
-
-        // Récupérer les informations des utilisateurs
-        const reporter = await User.findOne({ facebookId: senderId });
-        const reported = await User.findOne({ facebookId: chatInfo.partnerId });
-        
-        const reporterPseudo = reporter?.pseudo || 'Anonyme';
-        const reportedPseudo = reported?.pseudo || 'Anonyme';
-
-        // Créer le signalement avec tous les champs nécessaires
-        const reportData = {
-            // Champs principaux
-            reporterId: senderId,
-            reportedUserId: chatInfo.partnerId,
-            
-            // Champs de compatibilité (au cas où votre modèle les utilise)
-            reportedBy: senderId,
-            reportedUser: chatInfo.partnerId,
-            
-            // Informations supplémentaires
-            chatId: chatInfo.chatId,
-            reason: 'Comportement inapproprié',
-            status: 'pending',
-            timestamp: new Date(),
-            createdAt: new Date()
-        };
-
-        console.log('📝 Tentative de création du signalement:', reportData);
-
-        // Créer le signalement dans la base de données
-        const report = await Report.create(reportData);
-        
-        console.log(`✅ Signalement créé avec succès: ${report._id}`);
-        console.log(`   De: ${reporterPseudo} (${senderId})`);
-        console.log(`   Contre: ${reportedPseudo} (${chatInfo.partnerId})`);
-
-        // Mettre à jour le compteur de signalements de l'utilisateur signalé
-        await User.findOneAndUpdate(
-            { facebookId: chatInfo.partnerId },
-            { 
-                $inc: { reportCount: 1 },
-                $push: {
-                    reports: {
-                        reportedBy: senderId,
-                        reporterPseudo: reporterPseudo,
-                        reason: 'Comportement inapproprié',
-                        date: new Date()
-                    }
-                }
+    // Gérer les signalements
+    async handleReport(senderId) {
+        try {
+            // Vérifier si l'utilisateur est en conversation
+            if (!this.chatManager.isInChat(senderId)) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Vous devez être en conversation pour signaler quelqu'un.\n\n" +
+                    "Vous ne pouvez signaler qu'un utilisateur avec qui vous chattez actuellement."
+                );
+                return;
             }
-        );
 
-        // Vérifier si l'utilisateur doit être bloqué (3 signalements ou plus)
-        const reportedUser = await User.findOne({ facebookId: chatInfo.partnerId });
-        
-        if (reportedUser && reportedUser.reportCount >= 3) {
-            console.log(`⚠️ Utilisateur ${reportedPseudo} auto-bloqué (${reportedUser.reportCount} signalements)`);
+            const chatInfo = this.chatManager.getChatInfo(senderId);
             
+            if (!chatInfo || !chatInfo.partnerId) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Erreur : impossible de récupérer les informations de la conversation."
+                );
+                return;
+            }
+
+            // Récupérer les informations des utilisateurs
+            const reporter = await User.findOne({ facebookId: senderId });
+            const reported = await User.findOne({ facebookId: chatInfo.partnerId });
+            
+            const reporterPseudo = reporter?.pseudo || 'Anonyme';
+            const reportedPseudo = reported?.pseudo || 'Anonyme';
+
+            // Créer le signalement avec tous les champs nécessaires
+            const reportData = {
+                // Champs principaux
+                reporterId: senderId,
+                reportedUserId: chatInfo.partnerId,
+                
+                // Champs de compatibilité (au cas où votre modèle les utilise)
+                reportedBy: senderId,
+                reportedUser: chatInfo.partnerId,
+                
+                // Informations supplémentaires
+                chatId: chatInfo.chatId,
+                reason: 'Comportement inapproprié',
+                status: 'pending',
+                timestamp: new Date(),
+                createdAt: new Date()
+            };
+
+            console.log('📝 Tentative de création du signalement:', reportData);
+
+            // Créer le signalement dans la base de données
+            const report = await Report.create(reportData);
+            
+            console.log(`✅ Signalement créé avec succès: ${report._id}`);
+            console.log(`   De: ${reporterPseudo} (${senderId})`);
+            console.log(`   Contre: ${reportedPseudo} (${chatInfo.partnerId})`);
+
+            // Mettre à jour le compteur de signalements de l'utilisateur signalé
             await User.findOneAndUpdate(
                 { facebookId: chatInfo.partnerId },
                 { 
-                    isBlocked: true,
-                    blockedAt: new Date(),
-                    blockReason: `Auto-bloqué : ${reportedUser.reportCount} signalements`
+                    $inc: { reportCount: 1 },
+                    $push: {
+                        reports: {
+                            reportedBy: senderId,
+                            reporterPseudo: reporterPseudo,
+                            reason: 'Comportement inapproprié',
+                            date: new Date()
+                        }
+                    }
                 }
             );
+
+            // Vérifier si l'utilisateur doit être bloqué (3 signalements ou plus)
+            const reportedUser = await User.findOne({ facebookId: chatInfo.partnerId });
             
-            // Notifier l'utilisateur bloqué
-            await this.fb.sendTextMessage(chatInfo.partnerId,
-                "🚫 COMPTE SUSPENDU\n" +
-                "━━━━━━━━━━━━━━━━━━\n\n" +
-                "Votre compte a été suspendu suite à plusieurs signalements.\n\n" +
-                "Cette décision est définitive."
-            );
-        }
-
-        // Terminer la conversation
-        await this.chatManager.endChat(senderId, 'reported');
-
-        // Message de confirmation pour le rapporteur
-        await this.fb.sendTextMessage(senderId,
-            "✅ SIGNALEMENT ENREGISTRÉ\n" +
-            "━━━━━━━━━━━━━━━━━━\n\n" +
-            "Merci d'avoir signalé ce comportement.\n" +
-            "Notre équipe va examiner cette conversation.\n\n" +
-            "La conversation a été terminée pour votre sécurité.\n\n" +
-            "Commandes disponibles :\n" +
-            "/chercher - Trouver un nouveau partenaire\n" +
-            "/help - Afficher l'aide"
-        );
-
-        // Message neutre pour la personne signalée
-        await this.fb.sendTextMessage(chatInfo.partnerId,
-            "🔚 Conversation terminée.\n" +
-            "━━━━━━━━━━━━━━━━━━\n\n" +
-            "Votre partenaire a quitté la conversation.\n\n" +
-            "Tapez /chercher pour trouver un nouveau partenaire."
-        );
-
-        // Log pour l'admin
-        console.log(`⚠️ SIGNALEMENT:`);
-        console.log(`   • Rapporteur: ${reporterPseudo} (${senderId})`);
-        console.log(`   • Signalé: ${reportedPseudo} (${chatInfo.partnerId})`);
-        console.log(`   • Chat ID: ${chatInfo.chatId}`);
-        console.log(`   • Nombre de signalements du signalé: ${reportedUser?.reportCount || 1}`);
-
-    } catch (error) {
-        console.error('❌ Erreur complète signalement:', error);
-        console.error('Stack:', error.stack);
-        
-        // Message d'erreur pour l'utilisateur
-        await this.fb.sendTextMessage(senderId,
-            "❌ Une erreur s'est produite lors du signalement.\n\n" +
-            "La conversation va être terminée par sécurité.\n\n" +
-            "Si le problème persiste, contactez le support."
-        );
-        
-        // Essayer quand même de terminer la conversation
-        try {
-            if (this.chatManager.isInChat(senderId)) {
-                await this.chatManager.endChat(senderId, 'error');
+            if (reportedUser && reportedUser.reportCount >= 3) {
+                console.log(`⚠️ Utilisateur ${reportedPseudo} auto-bloqué (${reportedUser.reportCount} signalements)`);
+                
+                await User.findOneAndUpdate(
+                    { facebookId: chatInfo.partnerId },
+                    { 
+                        isBlocked: true,
+                        blockedAt: new Date(),
+                        blockReason: `Auto-bloqué : ${reportedUser.reportCount} signalements`
+                    }
+                );
+                
+                // Notifier l'utilisateur bloqué
+                await this.fb.sendTextMessage(chatInfo.partnerId,
+                    "🚫 COMPTE SUSPENDU\n" +
+                    "━━━━━━━━━━━━━━━━━━\n\n" +
+                    "Votre compte a été suspendu suite à plusieurs signalements.\n\n" +
+                    "Cette décision est définitive."
+                );
             }
-        } catch (endError) {
-            console.error('Erreur lors de la fin de conversation:', endError);
-        }
-    }
-}
 
-   // Dans messageHandler.js
-async handleFeedback(senderId, feedbackText) {
-    try {
-        if (!feedbackText || feedbackText.trim() === '') {
+            // Terminer la conversation
+            await this.chatManager.endChat(senderId, 'reported');
+
+            // Message de confirmation pour le rapporteur
             await this.fb.sendTextMessage(senderId,
-                "❌ Format incorrect !\n\n" +
-                "Utilisation : /feedback Votre message\n\n" +
-                "Exemples :\n" +
-                "• /feedback J'adore ce bot !\n" +
-                "• /feedback Bug: impossible d'envoyer des photos\n" +
-                "• /feedback Suggestion: ajouter des salons thématiques"
+                "✅ SIGNALEMENT ENREGISTRÉ\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "Merci d'avoir signalé ce comportement.\n" +
+                "Notre équipe va examiner cette conversation.\n\n" +
+                "La conversation a été terminée pour votre sécurité.\n\n" +
+                "Commandes disponibles :\n" +
+                "/chercher - Trouver un nouveau partenaire\n" +
+                "/help - Afficher l'aide"
             );
-            return;
+
+            // Message neutre pour la personne signalée
+            await this.fb.sendTextMessage(chatInfo.partnerId,
+                "🔚 Conversation terminée.\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "Votre partenaire a quitté la conversation.\n\n" +
+                "Tapez /chercher pour trouver un nouveau partenaire."
+            );
+
+            // Log pour l'admin
+            console.log(`⚠️ SIGNALEMENT:`);
+            console.log(`   • Rapporteur: ${reporterPseudo} (${senderId})`);
+            console.log(`   • Signalé: ${reportedPseudo} (${chatInfo.partnerId})`);
+            console.log(`   • Chat ID: ${chatInfo.chatId}`);
+            console.log(`   • Nombre de signalements du signalé: ${reportedUser?.reportCount || 1}`);
+
+        } catch (error) {
+            console.error('❌ Erreur complète signalement:', error);
+            console.error('Stack:', error.stack);
+            
+            // Message d'erreur pour l'utilisateur
+            await this.fb.sendTextMessage(senderId,
+                "❌ Une erreur s'est produite lors du signalement.\n\n" +
+                "La conversation va être terminée par sécurité.\n\n" +
+                "Si le problème persiste, contactez le support."
+            );
+            
+            // Essayer quand même de terminer la conversation
+            try {
+                if (this.chatManager.isInChat(senderId)) {
+                    await this.chatManager.endChat(senderId, 'error');
+                }
+            } catch (endError) {
+                console.error('Erreur lors de la fin de conversation:', endError);
+            }
         }
-
-        // Récupérer les infos utilisateur
-        const user = await User.findOne({ facebookId: senderId });
-        const userPseudo = user?.pseudo || 'Anonyme';
-
-        // Déterminer le type de feedback
-        let feedbackType = 'other';
-        const lowerText = feedbackText.toLowerCase();
-        
-        if (lowerText.includes('bug') || lowerText.includes('erreur') || lowerText.includes('probleme')) {
-            feedbackType = 'bug';
-        } else if (lowerText.includes('suggestion') || lowerText.includes('idee') || lowerText.includes('proposer')) {
-            feedbackType = 'suggestion';
-        } else if (lowerText.includes('merci') || lowerText.includes('super') || lowerText.includes('génial')) {
-            feedbackType = 'compliment';
-        } else if (lowerText.includes('nul') || lowerText.includes('mauvais') || lowerText.includes('problème')) {
-            feedbackType = 'complaint';
-        }
-
-        // Sauvegarder le feedback dans MongoDB
-        const { Feedback } = require('../models');
-        const feedback = await Feedback.create({
-            userId: senderId,
-            userPseudo: userPseudo,
-            message: feedbackText,
-            type: feedbackType,
-            status: 'pending',
-            timestamp: new Date()
-        });
-
-        console.log(`📝 Nouveau feedback (${feedbackType}) de ${userPseudo}: ${feedbackText}`);
-
-        // Message de confirmation personnalisé selon le type
-        let confirmMessage = "✅ Merci pour votre feedback !\n\n";
-        
-        switch(feedbackType) {
-            case 'bug':
-                confirmMessage += "🐛 Nous avons bien reçu votre rapport de bug.\n" +
-                                "Notre équipe technique va l'examiner rapidement.";
-                break;
-            case 'suggestion':
-                confirmMessage += "💡 Votre suggestion a été enregistrée.\n" +
-                                "Nous étudions toutes les idées pour améliorer le bot !";
-                break;
-            case 'compliment':
-                confirmMessage += "❤️ Merci beaucoup pour vos encouragements !\n" +
-                                "Ça nous motive à continuer d'améliorer le service.";
-                break;
-            case 'complaint':
-                confirmMessage += "😔 Nous sommes désolés que vous ayez eu une mauvaise expérience.\n" +
-                                "Nous allons examiner votre retour pour nous améliorer.";
-                break;
-            default:
-                confirmMessage += "Votre message a été transmis à l'équipe.\n" +
-                                "Nous apprécions votre contribution !";
-        }
-
-        confirmMessage += "\n\n💙 L'équipe SpeakToStranger";
-
-        await this.fb.sendTextMessage(senderId, confirmMessage);
-
-    } catch (error) {
-        console.error('Erreur feedback:', error);
-        await this.fb.sendTextMessage(senderId,
-            "❌ Erreur lors de l'envoi du feedback.\n\n" +
-            "Veuillez réessayer plus tard."
-        );
     }
-}
+
+    // Dans messageHandler.js
+    async handleFeedback(senderId, feedbackText) {
+        try {
+            if (!feedbackText || feedbackText.trim() === '') {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Format incorrect !\n\n" +
+                    "Utilisation : /feedback Votre message\n\n" +
+                    "Exemples :\n" +
+                    "• /feedback J'adore ce bot !\n" +
+                    "• /feedback Bug: impossible d'envoyer des photos\n" +
+                    "• /feedback Suggestion: ajouter des salons thématiques"
+                );
+                return;
+            }
+
+            // Récupérer les infos utilisateur
+            const user = await User.findOne({ facebookId: senderId });
+            const userPseudo = user?.pseudo || 'Anonyme';
+
+            // Déterminer le type de feedback
+            let feedbackType = 'other';
+            const lowerText = feedbackText.toLowerCase();
+            
+            if (lowerText.includes('bug') || lowerText.includes('erreur') || lowerText.includes('probleme')) {
+                feedbackType = 'bug';
+            } else if (lowerText.includes('suggestion') || lowerText.includes('idee') || lowerText.includes('proposer')) {
+                feedbackType = 'suggestion';
+            } else if (lowerText.includes('merci') || lowerText.includes('super') || lowerText.includes('génial')) {
+                feedbackType = 'compliment';
+            } else if (lowerText.includes('nul') || lowerText.includes('mauvais') || lowerText.includes('problème')) {
+                feedbackType = 'complaint';
+            }
+
+            // Sauvegarder le feedback dans MongoDB
+            const { Feedback } = require('../models');
+            const feedback = await Feedback.create({
+                userId: senderId,
+                userPseudo: userPseudo,
+                message: feedbackText,
+                type: feedbackType,
+                status: 'pending',
+                timestamp: new Date()
+            });
+
+            console.log(`📝 Nouveau feedback (${feedbackType}) de ${userPseudo}: ${feedbackText}`);
+
+            // Message de confirmation personnalisé selon le type
+            let confirmMessage = "✅ Merci pour votre feedback !\n\n";
+            
+            switch(feedbackType) {
+                case 'bug':
+                    confirmMessage += "🐛 Nous avons bien reçu votre rapport de bug.\n" +
+                                    "Notre équipe technique va l'examiner rapidement.";
+                    break;
+                case 'suggestion':
+                    confirmMessage += "💡 Votre suggestion a été enregistrée.\n" +
+                                    "Nous étudions toutes les idées pour améliorer le bot !";
+                    break;
+                case 'compliment':
+                    confirmMessage += "❤️ Merci beaucoup pour vos encouragements !\n" +
+                                    "Ça nous motive à continuer d'améliorer le service.";
+                    break;
+                case 'complaint':
+                    confirmMessage += "😔 Nous sommes désolés que vous ayez eu une mauvaise expérience.\n" +
+                                    "Nous allons examiner votre retour pour nous améliorer.";
+                    break;
+                default:
+                    confirmMessage += "Votre message a été transmis à l'équipe.\n" +
+                                    "Nous apprécions votre contribution !";
+            }
+
+            confirmMessage += "\n\n💙 L'équipe SpeakToStranger";
+
+            await this.fb.sendTextMessage(senderId, confirmMessage);
+
+        } catch (error) {
+            console.error('Erreur feedback:', error);
+            await this.fb.sendTextMessage(senderId,
+                "❌ Erreur lors de l'envoi du feedback.\n\n" +
+                "Veuillez réessayer plus tard."
+            );
+        }
+    }
 
     // Gérer les postbacks
     async handlePostback(senderId, postback) {
