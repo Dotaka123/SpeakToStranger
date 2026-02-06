@@ -810,57 +810,61 @@ L'équipe SpeakToStranger 🎭`;
 });
 
 // Route pour bloquer un utilisateur
+// Route pour bloquer un utilisateur (corrigée)
 app.post('/admin/user/:userId/block', async (req, res) => {
     try {
         const { userId } = req.params;
         const { reason } = req.body;
         
-        // Bloquer l'utilisateur dans la base de données
-        const updateResult = await User.findOneAndUpdate(
-            { facebookId: userId },
-            { 
-                isBlocked: true,
-                blockedAt: new Date(),
-                blockReason: reason || 'Violation des règles',
-                status: 'blocked' // Ajouter un statut
-            },
-            { new: true } // Retourner le document mis à jour
-        );
+        console.log(`Tentative de blocage: ${userId}`);
         
-        if (!updateResult) {
+        // Vérifier si l'utilisateur existe
+        const user = await User.findOne({ facebookId: userId });
+        
+        if (!user) {
             return res.status(404).json({ 
                 success: false, 
-                error: 'Utilisateur non trouvé' 
+                error: 'Utilisateur non trouvé dans la base de données' 
             });
         }
         
-        console.log(`✅ Utilisateur bloqué: ${userId} - Raison: ${reason}`);
+        // Bloquer l'utilisateur
+        user.isBlocked = true;
+        user.blockedAt = new Date();
+        user.blockReason = reason || 'Violation des règles';
+        user.status = 'blocked';
+        
+        await user.save();
+        
+        console.log(`✅ Utilisateur bloqué avec succès: ${userId} (${user.pseudo})`);
         
         // Envoyer le message de blocage
-        const blockMessage = `🚫 VOTRE COMPTE A ÉTÉ SUSPENDU
-
-Raison: ${reason || 'Violation des conditions d\'utilisation'}
-
-Cette décision est définitive suite à des violations répétées de nos règles.
-
-L'équipe SpeakToStranger`;
-        
-        await facebookAPI.sendTextMessage(userId, blockMessage);
-        
-        // Si l'utilisateur est en conversation, la terminer
-        if (chatManager.isInChat(userId)) {
-            await chatManager.endChat(userId, 'user_blocked');
+        try {
+            await facebookAPI.sendTextMessage(userId, 
+                `🚫 VOTRE COMPTE A ÉTÉ SUSPENDU\n\n` +
+                `Raison: ${reason || 'Violation des conditions d\'utilisation'}\n\n` +
+                `Cette décision est définitive.\n\n` +
+                `L'équipe SpeakToStranger`
+            );
+        } catch (fbError) {
+            console.error('Erreur envoi message Facebook:', fbError);
         }
         
-        // Retirer de la file d'attente si présent
-        if (chatManager.isInQueue(userId)) {
-            await chatManager.removeFromQueue(userId);
+        // Terminer toute conversation active
+        if (chatManager && chatManager.isInChat(userId)) {
+            await chatManager.endChat(userId, 'user_blocked');
         }
         
         res.json({ 
             success: true, 
-            message: 'Utilisateur bloqué avec succès',
-            user: updateResult 
+            message: `Utilisateur ${user.pseudo} (${userId}) bloqué avec succès`,
+            user: {
+                facebookId: user.facebookId,
+                pseudo: user.pseudo,
+                isBlocked: user.isBlocked,
+                blockedAt: user.blockedAt,
+                blockReason: user.blockReason
+            }
         });
         
     } catch (error) {
@@ -877,38 +881,49 @@ app.post('/admin/user/:userId/unblock', async (req, res) => {
     try {
         const { userId } = req.params;
         
-        const updateResult = await User.findOneAndUpdate(
-            { facebookId: userId },
-            { 
-                isBlocked: false,
-                blockedAt: null,
-                blockReason: null,
-                status: 'offline'
-            },
-            { new: true }
-        );
+        console.log(`Tentative de déblocage: ${userId}`);
         
-        if (!updateResult) {
+        const user = await User.findOne({ facebookId: userId });
+        
+        if (!user) {
             return res.status(404).json({ 
                 success: false, 
                 error: 'Utilisateur non trouvé' 
             });
         }
         
-        console.log(`✅ Utilisateur débloqué: ${userId}`);
+        // Débloquer l'utilisateur
+        user.isBlocked = false;
+        user.blockedAt = null;
+        user.blockReason = null;
+        user.status = 'offline';
+        
+        await user.save();
+        
+        console.log(`✅ Utilisateur débloqué: ${userId} (${user.pseudo})`);
         
         // Informer l'utilisateur
-        await facebookAPI.sendTextMessage(userId, 
-            "✅ Votre compte a été rétabli !\n\n" +
-            "Vous pouvez à nouveau utiliser SpeakToStranger.\n\n" +
-            "Merci de respecter les règles de la communauté.\n\n" +
-            "Tapez /help pour commencer."
-        );
+        try {
+            await facebookAPI.sendTextMessage(userId, 
+                "✅ COMPTE RÉTABLI !\n" +
+                "━━━━━━━━━━━━━━━━━━\n\n" +
+                "Votre compte a été rétabli.\n" +
+                "Vous pouvez à nouveau utiliser SpeakToStranger.\n\n" +
+                "⚠️ Merci de respecter les règles de la communauté.\n\n" +
+                "Tapez /help pour commencer."
+            );
+        } catch (fbError) {
+            console.error('Erreur envoi message Facebook:', fbError);
+        }
         
         res.json({ 
             success: true, 
-            message: 'Utilisateur débloqué avec succès',
-            user: updateResult 
+            message: `Utilisateur ${user.pseudo} (${userId}) débloqué avec succès`,
+            user: {
+                facebookId: user.facebookId,
+                pseudo: user.pseudo,
+                isBlocked: user.isBlocked
+            }
         });
         
     } catch (error) {
