@@ -1,3 +1,4 @@
+// app.js
 const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
@@ -23,32 +24,19 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN || 'VOTRE_TOKEN_ICI';
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'VOTRE_VERIFY_TOKEN';
 
 // Initialisation des gestionnaires (UNE SEULE FOIS)
-const userManager = new UserManager();        // ✅ Déclaré une seule fois
-const chatManager = new ChatManager();        // ✅ Déclaré une seule fois
-const messageHandler = new MessageHandler(chatManager, userManager); // ✅ Utilise les deux managers
-
-// Démarrer le nettoyage automatique
-chatManager.startAutoCleanup();
-
-// Routes d'administration (avant les routes webhook)
-const auth = require('./middleware/auth');
-
-// Configuration
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN || 'VOTRE_TOKEN_ICI';
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'VOTRE_VERIFY_TOKEN';
-
-// Initialisation des gestionnaires
 const userManager = new UserManager();
 const chatManager = new ChatManager();
 const messageHandler = new MessageHandler(chatManager, userManager);
 
-// Routes d'administration (avant les routes webhook)
+// Démarrer le nettoyage automatique
+chatManager.startAutoCleanup();
+
+// Routes d'administration
 const auth = require('./middleware/auth');
 
 app.get('/admin/login', auth.showLoginPage);
 app.post('/admin/login', auth.login.bind(auth));
 app.get('/admin/logout', auth.logout);
-
 // Dashboard admin (protégé)
 app.get('/admin', auth.requireAdmin, async (req, res) => {
     try {
