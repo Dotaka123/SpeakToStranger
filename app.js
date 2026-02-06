@@ -116,7 +116,7 @@ app.get('/admin', auth.requireAdmin, async (req, res) => {
 });
 
 // ========================================
-// PAGE DES SIGNALEMENTS COMPLÈTE
+// PAGE DES SIGNALEMENTS AMÉLIORÉE
 // ========================================
 app.get('/admin/reports-simple', async (req, res) => {
     try {
@@ -135,7 +135,6 @@ app.get('/admin/reports-simple', async (req, res) => {
             console.log('Erreur récupération données:', e);
         }
         
-        // Statistiques
         const pendingCount = reports.filter(r => r.status === 'pending').length;
         const resolvedCount = reports.filter(r => r.status === 'resolved').length;
         
@@ -150,16 +149,13 @@ app.get('/admin/reports-simple', async (req, res) => {
                     * { margin: 0; padding: 0; box-sizing: border-box; }
                     
                     body { 
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                         min-height: 100vh;
                         padding: 20px;
                     }
                     
-                    .container { 
-                        max-width: 1400px; 
-                        margin: 0 auto;
-                    }
+                    .container { max-width: 1400px; margin: 0 auto; }
                     
                     .header {
                         background: white;
@@ -191,72 +187,6 @@ app.get('/admin/reports-simple', async (req, res) => {
                         border-radius: 8px;
                         text-decoration: none;
                         font-weight: 500;
-                        transition: transform 0.2s;
-                    }
-                    
-                    .back-btn:hover {
-                        transform: translateY(-2px);
-                    }
-                    
-                    .stats-row {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                        gap: 1rem;
-                        margin-top: 1.5rem;
-                    }
-                    
-                    .stat-box {
-                        background: #f7fafc;
-                        padding: 1rem;
-                        border-radius: 8px;
-                        text-align: center;
-                    }
-                    
-                    .stat-value {
-                        font-size: 2rem;
-                        font-weight: bold;
-                        margin-bottom: 0.25rem;
-                    }
-                    
-                    .stat-label {
-                        color: #718096;
-                        font-size: 0.875rem;
-                        text-transform: uppercase;
-                    }
-                    
-                    .filters {
-                        background: white;
-                        padding: 1.5rem;
-                        border-radius: 12px;
-                        margin-bottom: 1.5rem;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.07);
-                    }
-                    
-                    .filter-buttons {
-                        display: flex;
-                        gap: 1rem;
-                        flex-wrap: wrap;
-                    }
-                    
-                    .filter-btn {
-                        padding: 8px 16px;
-                        border: 2px solid #e2e8f0;
-                        background: white;
-                        border-radius: 8px;
-                        cursor: pointer;
-                        transition: all 0.2s;
-                        font-weight: 500;
-                    }
-                    
-                    .filter-btn:hover {
-                        border-color: #667eea;
-                        color: #667eea;
-                    }
-                    
-                    .filter-btn.active {
-                        background: #667eea;
-                        color: white;
-                        border-color: #667eea;
                     }
                     
                     .reports-table {
@@ -271,73 +201,17 @@ app.get('/admin/reports-simple', async (req, res) => {
                         border-collapse: collapse;
                     }
                     
-                    thead {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    }
-                    
                     th {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                         color: white;
                         padding: 1rem;
                         text-align: left;
                         font-weight: 600;
-                        font-size: 0.875rem;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
                     }
                     
                     td {
                         padding: 1rem;
                         border-bottom: 1px solid #e2e8f0;
-                    }
-                    
-                    tr:hover {
-                        background: #f7fafc;
-                    }
-                    
-                    .user-info {
-                        display: flex;
-                        flex-direction: column;
-                    }
-                    
-                    .user-pseudo {
-                        font-weight: 600;
-                        color: #2d3748;
-                    }
-                    
-                    .user-id {
-                        font-size: 0.75rem;
-                        color: #a0aec0;
-                    }
-                    
-                    .reason-text {
-                        max-width: 300px;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
-                    }
-                    
-                    .status-badge {
-                        display: inline-block;
-                        padding: 4px 12px;
-                        border-radius: 20px;
-                        font-size: 0.75rem;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                    }
-                    
-                    .status-pending {
-                        background: #fed7d7;
-                        color: #c53030;
-                    }
-                    
-                    .status-reviewing {
-                        background: #feebc8;
-                        color: #c05621;
-                    }
-                    
-                    .status-resolved {
-                        background: #c6f6d5;
-                        color: #22543d;
                     }
                     
                     .action-buttons {
@@ -355,22 +229,9 @@ app.get('/admin/reports-simple', async (req, res) => {
                         transition: all 0.2s;
                     }
                     
-                    .btn-view {
-                        background: #edf2f7;
-                        color: #4a5568;
-                    }
-                    
-                    .btn-view:hover {
-                        background: #e2e8f0;
-                    }
-                    
                     .btn-warn {
                         background: #feebc8;
                         color: #c05621;
-                    }
-                    
-                    .btn-warn:hover {
-                        background: #fbd38d;
                     }
                     
                     .btn-block {
@@ -378,30 +239,12 @@ app.get('/admin/reports-simple', async (req, res) => {
                         color: #c53030;
                     }
                     
-                    .btn-block:hover {
-                        background: #fc8181;
-                    }
-                    
                     .btn-resolve {
                         background: #c6f6d5;
                         color: #22543d;
                     }
                     
-                    .btn-resolve:hover {
-                        background: #9ae6b4;
-                    }
-                    
-                    .no-data {
-                        text-align: center;
-                        padding: 4rem;
-                        color: #a0aec0;
-                    }
-                    
-                    .no-data-icon {
-                        font-size: 4rem;
-                        margin-bottom: 1rem;
-                    }
-                    
+                    /* Modal styles */
                     .modal {
                         display: none;
                         position: fixed;
@@ -427,13 +270,10 @@ app.get('/admin/reports-simple', async (req, res) => {
                         width: 90%;
                     }
                     
-                    .modal-header {
-                        margin-bottom: 1.5rem;
-                    }
-                    
                     .modal-title {
                         font-size: 1.5rem;
                         color: #2d3748;
+                        margin-bottom: 1.5rem;
                     }
                     
                     .form-group {
@@ -462,27 +302,49 @@ app.get('/admin/reports-simple', async (req, res) => {
                         margin-top: 1.5rem;
                     }
                     
-                    .danger { color: #e53e3e; }
-                    .warning { color: #dd6b20; }
-                    .success { color: #38a169; }
-                    .info { color: #3182ce; }
+                    .btn-cancel {
+                        background: #e2e8f0;
+                        color: #4a5568;
+                    }
                     
-                    @media (max-width: 768px) {
-                        .header-top {
-                            flex-direction: column;
-                            gap: 1rem;
+                    .btn-confirm {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                    }
+                    
+                    .toast {
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        padding: 15px 20px;
+                        border-radius: 8px;
+                        color: white;
+                        font-weight: 500;
+                        z-index: 2000;
+                        display: none;
+                        animation: slideIn 0.3s ease;
+                    }
+                    
+                    .toast.success {
+                        background: #48bb78;
+                    }
+                    
+                    .toast.error {
+                        background: #f56565;
+                    }
+                    
+                    .toast.show {
+                        display: block;
+                    }
+                    
+                    @keyframes slideIn {
+                        from {
+                            transform: translateX(100%);
+                            opacity: 0;
                         }
-                        
-                        .action-buttons {
-                            flex-direction: column;
-                        }
-                        
-                        table {
-                            font-size: 0.875rem;
-                        }
-                        
-                        th, td {
-                            padding: 0.5rem;
+                        to {
+                            transform: translateX(0);
+                            opacity: 1;
                         }
                     }
                 </style>
@@ -499,39 +361,10 @@ app.get('/admin/reports-simple', async (req, res) => {
                                 ← Retour au Dashboard
                             </a>
                         </div>
-                        
-                        <div class="stats-row">
-                            <div class="stat-box">
-                                <div class="stat-value danger">${pendingCount}</div>
-                                <div class="stat-label">En attente</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-value warning">${reports.filter(r => r.status === 'reviewing').length}</div>
-                                <div class="stat-label">En cours</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-value success">${resolvedCount}</div>
-                                <div class="stat-label">Résolus</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-value info">${reports.length}</div>
-                                <div class="stat-label">Total</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="filters">
-                        <div class="filter-buttons">
-                            <button class="filter-btn active" onclick="filterReports('all')">Tous</button>
-                            <button class="filter-btn" onclick="filterReports('pending')">En attente</button>
-                            <button class="filter-btn" onclick="filterReports('reviewing')">En cours</button>
-                            <button class="filter-btn" onclick="filterReports('resolved')">Résolus</button>
-                            <button class="filter-btn" onclick="filterReports('today')">Aujourd'hui</button>
-                        </div>
                     </div>
                     
                     <div class="reports-table">
-                        <table id="reportsTable">
+                        <table>
                             <thead>
                                 <tr>
                                     <th>Date</th>
@@ -544,60 +377,29 @@ app.get('/admin/reports-simple', async (req, res) => {
                             </thead>
                             <tbody>`;
         
-        if (reports.length === 0) {
+        for (const report of reports) {
+            const reporter = users.get(report.reporterId);
+            const reported = users.get(report.reportedUserId);
+            const status = report.status || 'pending';
+            const date = new Date(report.createdAt);
+            
             html += `
                 <tr>
-                    <td colspan="6">
-                        <div class="no-data">
-                            <div class="no-data-icon">📭</div>
-                            <h3>Aucun signalement</h3>
-                            <p>Tous les utilisateurs se comportent bien ! 🎉</p>
+                    <td>${date.toLocaleDateString('fr-FR')}</td>
+                    <td>${reporter?.pseudo || 'Utilisateur'}</td>
+                    <td>${reported?.pseudo || 'Utilisateur'}</td>
+                    <td>${report.reason || 'Non spécifiée'}</td>
+                    <td>${status}</td>
+                    <td>
+                        <div class="action-buttons">
+                            ${status === 'pending' ? `
+                                <button class="action-btn btn-warn" onclick="openWarningModal('${report.reportedUserId}', '${report._id}')">⚠️ Avertir</button>
+                                <button class="action-btn btn-block" onclick="openBlockModal('${report.reportedUserId}', '${report._id}')">🚫 Bloquer</button>
+                                <button class="action-btn btn-resolve" onclick="resolveReport('${report._id}')">✅ Résoudre</button>
+                            ` : '✅ Résolu'}
                         </div>
                     </td>
                 </tr>`;
-        } else {
-            for (const report of reports) {
-                const reporter = users.get(report.reporterId);
-                const reported = users.get(report.reportedUserId);
-                const status = report.status || 'pending';
-                const date = new Date(report.createdAt);
-                const dateStr = date.toLocaleDateString('fr-FR') + ' ' + date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-                
-                html += `
-                    <tr data-status="${status}" data-date="${date.toISOString()}">
-                        <td>${dateStr}</td>
-                        <td>
-                            <div class="user-info">
-                                <span class="user-pseudo">${reporter?.pseudo || 'Utilisateur'}</span>
-                                <span class="user-id">${report.reporterId?.substring(0, 8)}...</span>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="user-info">
-                                <span class="user-pseudo">${reported?.pseudo || 'Utilisateur'}</span>
-                                <span class="user-id">${report.reportedUserId?.substring(0, 8)}...</span>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="reason-text" title="${report.reason || 'Non spécifiée'}">
-                                ${report.reason || 'Non spécifiée'}
-                            </div>
-                        </td>
-                        <td>
-                            <span class="status-badge status-${status}">${status}</span>
-                        </td>
-                        <td>
-                            <div class="action-buttons">
-                                <button class="action-btn btn-view" onclick="viewDetails('${report._id}')">👁️</button>
-                                ${status === 'pending' ? `
-                                    <button class="action-btn btn-warn" onclick="warnUser('${report.reportedUserId}')">⚠️</button>
-                                    <button class="action-btn btn-block" onclick="blockUser('${report.reportedUserId}')">🚫</button>
-                                    <button class="action-btn btn-resolve" onclick="resolveReport('${report._id}')">✅</button>
-                                ` : ''}
-                            </div>
-                        </td>
-                    </tr>`;
-            }
         }
         
         html += `
@@ -606,88 +408,230 @@ app.get('/admin/reports-simple', async (req, res) => {
                     </div>
                 </div>
                 
-                <!-- Modal pour les actions -->
-                <div id="actionModal" class="modal">
+                <!-- Modal d'avertissement -->
+                <div id="warningModal" class="modal">
                     <div class="modal-content">
-                        <div class="modal-header">
-                            <h2 class="modal-title">Action de modération</h2>
-                        </div>
-                        <form id="actionForm">
+                        <h2 class="modal-title">⚠️ Envoyer un avertissement</h2>
+                        <form id="warningForm">
+                            <input type="hidden" id="warnUserId">
+                            <input type="hidden" id="warnReportId">
+                            
                             <div class="form-group">
-                                <label class="form-label">Type d'action</label>
-                                <select class="form-select" id="actionType">
-                                    <option value="warn">Avertissement</option>
-                                    <option value="block">Bloquer l'utilisateur</option>
-                                    <option value="resolve">Marquer comme résolu</option>
+                                <label class="form-label">Type d'avertissement</label>
+                                <select class="form-select" id="warnType">
+                                    <option value="general">Comportement inapproprié</option>
+                                    <option value="language">Langage offensant</option>
+                                    <option value="spam">Spam ou publicité</option>
+                                    <option value="harassment">Harcèlement</option>
+                                    <option value="custom">Personnalisé</option>
                                 </select>
                             </div>
+                            
                             <div class="form-group">
-                                <label class="form-label">Raison / Notes</label>
-                                <textarea class="form-textarea" id="actionReason" rows="3" placeholder="Expliquez la raison de cette action..."></textarea>
+                                <label class="form-label">Message personnalisé (optionnel)</label>
+                                <textarea class="form-textarea" id="warnMessage" rows="3" 
+                                    placeholder="Ajoutez des détails sur la raison de l'avertissement..."></textarea>
                             </div>
+                            
                             <div class="modal-footer">
-                                <button type="button" class="action-btn btn-view" onclick="closeModal()">Annuler</button>
-                                <button type="submit" class="action-btn btn-warn">Confirmer</button>
+                                <button type="button" class="action-btn btn-cancel" onclick="closeModal('warningModal')">Annuler</button>
+                                <button type="submit" class="action-btn btn-confirm">Envoyer l'avertissement</button>
                             </div>
                         </form>
                     </div>
                 </div>
                 
+                <!-- Modal de blocage -->
+                <div id="blockModal" class="modal">
+                    <div class="modal-content">
+                        <h2 class="modal-title">🚫 Bloquer l'utilisateur</h2>
+                        <form id="blockForm">
+                            <input type="hidden" id="blockUserId">
+                            <input type="hidden" id="blockReportId">
+                            
+                            <div class="form-group">
+                                <label class="form-label">Raison du blocage</label>
+                                <select class="form-select" id="blockReason">
+                                    <option value="violation">Violation grave des conditions</option>
+                                    <option value="repeated">Infractions répétées</option>
+                                    <option value="harassment">Harcèlement grave</option>
+                                    <option value="illegal">Contenu illégal</option>
+                                    <option value="custom">Autre raison</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Détails (optionnel)</label>
+                                <textarea class="form-textarea" id="blockDetails" rows="3"></textarea>
+                            </div>
+                            
+                            <div class="modal-footer">
+                                <button type="button" class="action-btn btn-cancel" onclick="closeModal('blockModal')">Annuler</button>
+                                <button type="submit" class="action-btn btn-confirm" style="background: #f56565;">Bloquer définitivement</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- Toast de notification -->
+                <div id="toast" class="toast"></div>
+                
                 <script>
-                    function filterReports(filter) {
-                        const rows = document.querySelectorAll('#reportsTable tbody tr');
-                        const buttons = document.querySelectorAll('.filter-btn');
+                    // Fonction pour ouvrir le modal d'avertissement
+                    function openWarningModal(userId, reportId) {
+                        document.getElementById('warnUserId').value = userId;
+                        document.getElementById('warnReportId').value = reportId;
+                        document.getElementById('warningModal').classList.add('active');
+                    }
+                    
+                    // Fonction pour ouvrir le modal de blocage
+                    function openBlockModal(userId, reportId) {
+                        document.getElementById('blockUserId').value = userId;
+                        document.getElementById('blockReportId').value = reportId;
+                        document.getElementById('blockModal').classList.add('active');
+                    }
+                    
+                    // Fermer un modal
+                    function closeModal(modalId) {
+                        document.getElementById(modalId).classList.remove('active');
+                    }
+                    
+                    // Afficher une notification toast
+                    function showToast(message, type = 'success') {
+                        const toast = document.getElementById('toast');
+                        toast.textContent = message;
+                        toast.className = 'toast ' + type + ' show';
+                        setTimeout(() => {
+                            toast.classList.remove('show');
+                        }, 3000);
+                    }
+                    
+                    // Gestionnaire du formulaire d'avertissement
+                    document.getElementById('warningForm').addEventListener('submit', async (e) => {
+                        e.preventDefault();
                         
-                        buttons.forEach(btn => btn.classList.remove('active'));
-                        event.target.classList.add('active');
+                        const userId = document.getElementById('warnUserId').value;
+                        const reportId = document.getElementById('warnReportId').value;
+                        const warnType = document.getElementById('warnType').value;
+                        const customMessage = document.getElementById('warnMessage').value;
                         
-                        rows.forEach(row => {
-                            if (filter === 'all') {
-                                row.style.display = '';
-                            } else if (filter === 'today') {
-                                const date = new Date(row.dataset.date);
-                                const today = new Date();
-                                if (date.toDateString() === today.toDateString()) {
-                                    row.style.display = '';
-                                } else {
-                                    row.style.display = 'none';
-                                }
+                        let reason = '';
+                        switch(warnType) {
+                            case 'general': reason = 'Comportement inapproprié'; break;
+                            case 'language': reason = 'Langage offensant'; break;
+                            case 'spam': reason = 'Spam ou publicité non sollicitée'; break;
+                            case 'harassment': reason = 'Harcèlement d\'autres utilisateurs'; break;
+                            case 'custom': reason = customMessage || 'Violation des règles'; break;
+                        }
+                        
+                        try {
+                            const response = await fetch('/admin/user/' + userId + '/warn', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ reason })
+                            });
+                            
+                            const data = await response.json();
+                            
+                            if (data.success) {
+                                // Résoudre le signalement
+                                await fetch('/admin/report/' + reportId + '/resolve', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'warn', userId, reason })
+                                });
+                                
+                                showToast('✅ Avertissement envoyé avec succès !', 'success');
+                                closeModal('warningModal');
+                                setTimeout(() => location.reload(), 2000);
                             } else {
-                                if (row.dataset.status === filter) {
-                                    row.style.display = '';
+                                showToast('❌ Erreur: ' + (data.error || 'Impossible d\\'envoyer l\\'avertissement'), 'error');
+                            }
+                        } catch (error) {
+                            showToast('❌ Erreur réseau: ' + error.message, 'error');
+                        }
+                    });
+                    
+                    // Gestionnaire du formulaire de blocage
+                    document.getElementById('blockForm').addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        
+                        if (!confirm('Êtes-vous sûr de vouloir bloquer cet utilisateur définitivement ?')) {
+                            return;
+                        }
+                        
+                        const userId = document.getElementById('blockUserId').value;
+                        const reportId = document.getElementById('blockReportId').value;
+                        const blockReason = document.getElementById('blockReason').value;
+                        const blockDetails = document.getElementById('blockDetails').value;
+                        
+                        let reason = '';
+                        switch(blockReason) {
+                            case 'violation': reason = 'Violation grave des conditions d\\'utilisation'; break;
+                            case 'repeated': reason = 'Infractions répétées malgré les avertissements'; break;
+                            case 'harassment': reason = 'Harcèlement grave d\\'autres utilisateurs'; break;
+                            case 'illegal': reason = 'Partage de contenu illégal'; break;
+                            case 'custom': reason = blockDetails || 'Violation des règles communautaires'; break;
+                        }
+                        
+                        try {
+                            const response = await fetch('/admin/user/' + userId + '/block', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ reason })
+                            });
+                            
+                            const data = await response.json();
+                            
+                            if (data.success) {
+                                // Résoudre le signalement
+                                await fetch('/admin/report/' + reportId + '/resolve', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'block', userId, reason })
+                                });
+                                
+                                showToast('✅ Utilisateur bloqué avec succès !', 'success');
+                                closeModal('blockModal');
+                                setTimeout(() => location.reload(), 2000);
+                            } else {
+                                showToast('❌ Erreur: ' + (data.error || 'Impossible de bloquer l\\'utilisateur'), 'error');
+                            }
+                        } catch (error) {
+                            showToast('❌ Erreur réseau: ' + error.message, 'error');
+                        }
+                    });
+                    
+                    // Résoudre un signalement sans action
+                    async function resolveReport(reportId) {
+                        if (confirm('Marquer ce signalement comme résolu sans action ?')) {
+                            try {
+                                const response = await fetch('/admin/report/' + reportId + '/resolve', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'resolved' })
+                                });
+                                
+                                if (response.ok) {
+                                    showToast('✅ Signalement résolu', 'success');
+                                    setTimeout(() => location.reload(), 2000);
                                 } else {
-                                    row.style.display = 'none';
+                                    showToast('❌ Erreur lors de la résolution', 'error');
                                 }
+                            } catch (error) {
+                                showToast('❌ Erreur: ' + error.message, 'error');
+                            }
+                        }
+                    }
+                    
+                    // Fermer les modals en cliquant en dehors
+                    document.querySelectorAll('.modal').forEach(modal => {
+                        modal.addEventListener('click', (e) => {
+                            if (e.target === modal) {
+                                modal.classList.remove('active');
                             }
                         });
-                    }
-                    
-                    function viewDetails(reportId) {
-                        alert('Détails du signalement: ' + reportId);
-                    }
-                    
-                    function warnUser(userId) {
-                        if (confirm('Envoyer un avertissement à cet utilisateur ?')) {
-                            alert('Avertissement envoyé à: ' + userId);
-                        }
-                    }
-                    
-                    function blockUser(userId) {
-                        if (confirm('Bloquer cet utilisateur ?')) {
-                            alert('Utilisateur bloqué: ' + userId);
-                        }
-                    }
-                    
-                    function resolveReport(reportId) {
-                        if (confirm('Marquer ce signalement comme résolu ?')) {
-                            alert('Signalement résolu: ' + reportId);
-                            location.reload();
-                        }
-                    }
-                    
-                    function closeModal() {
-                        document.getElementById('actionModal').classList.remove('active');
-                    }
+                    });
                 </script>
             </body>
             </html>`;
@@ -696,6 +640,207 @@ app.get('/admin/reports-simple', async (req, res) => {
     } catch (error) {
         console.error('Erreur page signalements:', error);
         res.status(500).send(`<h1>Erreur</h1><p>${error.message}</p><a href="/admin/dashboard-direct">Retour</a>`);
+    }
+});
+
+// ========================================
+// FONCTIONS D'ENVOI DE MESSAGES FACEBOOK
+// ========================================
+
+// Fonction pour envoyer un message via l'API Facebook
+async function sendMessageToUser(userId, message) {
+    const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+    
+    try {
+        const response = await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                recipient: { id: userId },
+                message: { text: message }
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Erreur Facebook API:', data.error);
+            return { success: false, error: data.error.message };
+        }
+        
+        return { success: true, messageId: data.message_id };
+    } catch (error) {
+        console.error('Erreur envoi message:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// ========================================
+// ROUTES API POUR LES ACTIONS ADMIN
+// ========================================
+
+// Route pour envoyer un avertissement à un utilisateur
+app.post('/admin/user/:userId/warn', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { reason } = req.body;
+        
+        // Message d'avertissement personnalisé
+        const warningMessage = `⚠️ AVERTISSEMENT ADMINISTRATEUR ⚠️
+
+Bonjour,
+
+Vous avez reçu un avertissement de la part de l'équipe de modération de SpeakToStranger.
+
+${reason ? `Raison: ${reason}` : 'Votre comportement ne respecte pas nos règles communautaires.'}
+
+Merci de respecter les règles suivantes :
+• Restez respectueux envers les autres utilisateurs
+• Pas de contenu inapproprié ou offensant
+• Pas de harcèlement ou spam
+• Pas de partage d'informations personnelles
+
+En cas de récidive, votre compte pourrait être suspendu définitivement.
+
+Cordialement,
+L'équipe SpeakToStranger 🎭`;
+
+        // Envoyer le message via Facebook
+        const result = await sendMessageToUser(userId, warningMessage);
+        
+        // Enregistrer l'avertissement dans la base de données
+        if (result.success) {
+            const { User } = require('./models');
+            await User.findOneAndUpdate(
+                { facebookId: userId },
+                { 
+                    $push: { 
+                        warnings: {
+                            date: new Date(),
+                            reason: reason || 'Comportement inapproprié',
+                            sentBy: 'admin'
+                        }
+                    },
+                    $inc: { warningCount: 1 }
+                }
+            );
+        }
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Erreur avertissement:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route pour bloquer un utilisateur avec notification
+app.post('/admin/user/:userId/block', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { reason } = req.body;
+        
+        // Message de blocage
+        const blockMessage = `🚫 COMPTE SUSPENDU 🚫
+
+Votre compte a été suspendu de SpeakToStranger.
+
+${reason ? `Raison: ${reason}` : 'Violation grave des conditions d'utilisation.'}
+
+Cette décision est définitive.
+
+Si vous pensez qu'il s'agit d'une erreur, contactez le support.
+
+L'équipe SpeakToStranger`;
+
+        // Envoyer le message
+        await sendMessageToUser(userId, blockMessage);
+        
+        // Bloquer dans la base de données
+        const { User } = require('./models');
+        await User.findOneAndUpdate(
+            { facebookId: userId },
+            { 
+                isBlocked: true,
+                blockedAt: new Date(),
+                blockReason: reason || 'Violation des conditions d\'utilisation'
+            }
+        );
+        
+        res.json({ success: true, message: 'Utilisateur bloqué et notifié' });
+    } catch (error) {
+        console.error('Erreur blocage:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route pour envoyer un message personnalisé
+app.post('/admin/user/:userId/message', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { message } = req.body;
+        
+        if (!message) {
+            return res.status(400).json({ success: false, error: 'Message requis' });
+        }
+        
+        const customMessage = `📢 MESSAGE DE L'ADMINISTRATION
+
+${message}
+
+L'équipe SpeakToStranger 🎭`;
+        
+        const result = await sendMessageToUser(userId, customMessage);
+        res.json(result);
+    } catch (error) {
+        console.error('Erreur envoi message:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route pour résoudre un signalement avec action
+app.post('/admin/report/:reportId/resolve', async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const { action, userId, reason } = req.body;
+        
+        const { Report } = require('./models');
+        
+        // Marquer le signalement comme résolu
+        await Report.findByIdAndUpdate(reportId, {
+            status: 'resolved',
+            resolvedAt: new Date(),
+            resolvedAction: action,
+            resolvedBy: 'admin'
+        });
+        
+        // Effectuer l'action choisie
+        if (action === 'warn' && userId) {
+            await sendMessageToUser(userId, `⚠️ Vous avez reçu un avertissement suite à un signalement.
+
+${reason || 'Merci de respecter les règles de la communauté.'}
+
+L'équipe SpeakToStranger`);
+        } else if (action === 'block' && userId) {
+            await sendMessageToUser(userId, `🚫 Votre compte a été suspendu suite à des signalements répétés.
+
+${reason || 'Violation des conditions d\'utilisation.'}
+
+L'équipe SpeakToStranger`);
+            
+            // Bloquer l'utilisateur
+            const { User } = require('./models');
+            await User.findOneAndUpdate(
+                { facebookId: userId },
+                { isBlocked: true, blockedAt: new Date() }
+            );
+        }
+        
+        res.json({ success: true, message: 'Signalement résolu' });
+    } catch (error) {
+        console.error('Erreur résolution signalement:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
