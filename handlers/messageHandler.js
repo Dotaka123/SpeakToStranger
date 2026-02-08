@@ -506,7 +506,10 @@ class MessageHandler {
                 "• /profil - Voir votre profil\n" +
                 "• /stats - Vos statistiques\n" +
                 "• /infos - Stats du bot\n" +
-                "• /pseudo - Changer de nom\n\n" +
+                "• /pseudo - Changer de nom\n" +
+                "• /signaler - Signaler l'utilisateur\n" +
+                "• /stop - Quitter la conversation\n" +
+                "• /feeedback - Envoyer des suggestions d'amelioration\n\n" +
                 "Utilisez les commandes ou les boutons :";
             
             quickReplies = [
