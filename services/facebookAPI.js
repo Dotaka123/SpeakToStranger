@@ -194,6 +194,16 @@ class FacebookAPI {
         }
     }
 
+    // Alias pour sendQuickReply - accepte un objet message avec text et quick_replies
+    async sendQuickReplies(recipientId, messageObj) {
+        // Si messageObj est un objet avec text et quick_replies
+        if (typeof messageObj === 'object' && messageObj.text && messageObj.quick_replies) {
+            return this.sendQuickReply(recipientId, messageObj.text, messageObj.quick_replies);
+        }
+        // Sinon, appel standard
+        return this.sendQuickReply(recipientId, messageObj);
+    }
+
     // Envoyer un message d'avertissement
     async sendWarningMessage(userId, reason) {
         let warningMessage = '⚠️ AVERTISSEMENT ADMINISTRATEUR ⚠️\n\n';
