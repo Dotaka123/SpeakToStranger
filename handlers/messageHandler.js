@@ -191,7 +191,7 @@ class MessageHandler {
         try {
             switch(payload) {
                 case 'QUICK_CHERCHER':
-                    await this.chatManager.addToQueue(senderId);
+                    await this.showThemeSelection(senderId);
                     break;
                     
                 case 'QUICK_STOP':
@@ -220,6 +220,63 @@ class MessageHandler {
                     
                 case 'QUICK_PSEUDO':
                     await this.showPseudoInstructions(senderId);
+                    break;
+                
+                // 🆕 NOUVEAUX QUICK REPLIES
+                case 'QUICK_FAVORIS':
+                    await this.showFavorites(senderId);
+                    break;
+                    
+                case 'QUICK_HISTORIQUE':
+                    await this.showHistory(senderId);
+                    break;
+                    
+                case 'QUICK_BADGES':
+                    await this.showBadges(senderId);
+                    break;
+                    
+                case 'QUICK_ADD_FAV':
+                    await this.addCurrentPartnerToFavorites(senderId);
+                    break;
+                
+                // THÈMES DE DISCUSSION
+                case 'THEME_SPORT':
+                    await this.chatManager.addToQueue(senderId, { theme: 'sport' });
+                    break;
+                case 'THEME_MUSIC':
+                    await this.chatManager.addToQueue(senderId, { theme: 'musique' });
+                    break;
+                case 'THEME_GAMING':
+                    await this.chatManager.addToQueue(senderId, { theme: 'gaming' });
+                    break;
+                case 'THEME_CULTURE':
+                    await this.chatManager.addToQueue(senderId, { theme: 'culture' });
+                    break;
+                case 'THEME_VOYAGE':
+                    await this.chatManager.addToQueue(senderId, { theme: 'voyage' });
+                    break;
+                case 'THEME_TECH':
+                    await this.chatManager.addToQueue(senderId, { theme: 'tech' });
+                    break;
+                case 'THEME_ART':
+                    await this.chatManager.addToQueue(senderId, { theme: 'art' });
+                    break;
+                case 'THEME_RANDOM':
+                    await this.chatManager.addToQueue(senderId, { theme: 'aléatoire' });
+                    break;
+                    
+                // FEEDBACK POST-CONVERSATION
+                case 'FEEDBACK_EXCELLENT':
+                    await this.submitFeedback(senderId, 'excellent');
+                    break;
+                case 'FEEDBACK_GOOD':
+                    await this.submitFeedback(senderId, 'good');
+                    break;
+                case 'FEEDBACK_AVERAGE':
+                    await this.submitFeedback(senderId, 'average');
+                    break;
+                case 'FEEDBACK_BAD':
+                    await this.submitFeedback(senderId, 'bad');
                     break;
                     
                 default:
@@ -301,7 +358,7 @@ class MessageHandler {
                 case '/search':
                 case '/nouveau':
                 case '/new':
-                    await this.chatManager.addToQueue(senderId);
+                    await this.showThemeSelection(senderId);
                     break;
                     
                 case '/stop':
@@ -337,6 +394,32 @@ class MessageHandler {
                 case '/feedback':
                     const feedback = messageText.slice(9).trim();
                     await this.handleFeedback(senderId, feedback);
+                    break;
+                
+                // 🆕 NOUVELLES COMMANDES
+                case '/favoris':
+                case '/favorites':
+                    await this.showFavorites(senderId);
+                    break;
+                    
+                case '/historique':
+                case '/history':
+                    await this.showHistory(senderId);
+                    break;
+                    
+                case '/reconnect':
+                case '/reconnecter':
+                    const targetNumber = parts[1];
+                    await this.requestReconnect(senderId, targetNumber);
+                    break;
+                    
+                case '/badges':
+                    await this.showBadges(senderId);
+                    break;
+                    
+                case '/themes':
+                case '/thèmes':
+                    await this.showThemeSelection(senderId);
                     break;
                     
                 default:
@@ -502,15 +585,23 @@ class MessageHandler {
             helpMessage += 
                 "📝 COMMANDES DISPONIBLES :\n" +
                 "━━━━━━━━━━━━━━━━━━\n" +
+                "🔍 CONVERSATION\n" +
                 "• /chercher - Trouver quelqu'un\n" +
+                "• /themes - Choisir un thème\n" +
+                "• /stop - Quitter la conversation\n\n" +
+                "⭐ FAVORIS & HISTORIQUE\n" +
+                "• /favoris - Voir vos favoris\n" +
+                "• /historique - Dernières conversations\n" +
+                "• /reconnect [N] - Reconnecter avec quelqu'un\n\n" +
+                "👤 PROFIL\n" +
                 "• /profil - Voir votre profil\n" +
                 "• /stats - Vos statistiques\n" +
-                "• /infos - Stats du bot\n" +
-                "• /pseudo - Changer de nom\n" +
+                "• /badges - Vos badges\n" +
+                "• /pseudo - Changer de nom\n\n" +
+                "🛡️ SÉCURITÉ\n" +
                 "• /signaler - Signaler l'utilisateur\n" +
-                "• /stop - Quitter la conversation\n" +
-                "• /feeedback - Envoyer des suggestions d'amelioration\n\n" +
-                "Utilisez les commandes ou les boutons :";
+                "• /feedback - Suggestions\n\n" +
+                "Ou utilisez les boutons :";
             
             quickReplies = [
                 {
@@ -520,18 +611,18 @@ class MessageHandler {
                 },
                 {
                     content_type: 'text',
-                    title: '👤 Profil',
-                    payload: 'QUICK_PROFIL'
+                    title: '⭐ Favoris',
+                    payload: 'QUICK_FAVORIS'
                 },
                 {
                     content_type: 'text',
-                    title: '📊 Stats',
-                    payload: 'QUICK_STATS'
+                    title: '📋 Historique',
+                    payload: 'QUICK_HISTORIQUE'
                 },
                 {
                     content_type: 'text',
-                    title: '📈 Infos Bot',
-                    payload: 'QUICK_INFOS'
+                    title: '🏆 Badges',
+                    payload: 'QUICK_BADGES'
                 }
             ];
         }
@@ -779,22 +870,55 @@ class MessageHandler {
                 timestamp: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
             });
 
+            // 🆕 Calculer la durée moyenne
+            const avgDuration = user.totalConversations > 0 
+                ? Math.floor((user.totalChatDuration || 0) / user.totalConversations)
+                : 0;
+
+            const formatDuration = (secs) => {
+                const hours = Math.floor(secs / 3600);
+                const minutes = Math.floor((secs % 3600) / 60);
+                if (hours > 0) return `${hours}h ${minutes}min`;
+                if (minutes > 0) return `${minutes}min`;
+                return `${secs}s`;
+            };
+
+            // 🆕 Afficher les étoiles du score
+            const getStars = (score) => {
+                if (score >= 90) return '⭐⭐⭐⭐⭐';
+                if (score >= 75) return '⭐⭐⭐⭐';
+                if (score >= 60) return '⭐⭐⭐';
+                if (score >= 40) return '⭐⭐';
+                return '⭐';
+            };
+
             const statsMessage = 
                 "📊 VOS STATISTIQUES\n" +
                 "━━━━━━━━━━━━━━━━━━\n\n" +
-                `📝 Pseudo : ${user.pseudo || 'Non défini'}\n` +
-                `💬 Conversations : ${user.totalConversations || 0}\n` +
-                `📨 Messages totaux : ${user.totalMessages || 0}\n` +
-                `📅 Messages aujourd'hui : ${todayMessages}\n` +
-                `⚠️ Signalements : ${user.reportCount || 0}\n` +
-                `📅 Membre depuis : ${new Date(user.createdAt).toLocaleDateString('fr-FR')}\n\n` +
-                "Actions rapides :";
+                `📝 Pseudo: ${user.pseudo || 'Non défini'}\n` +
+                `💬 Conversations: ${user.totalConversations || 0}\n` +
+                `📨 Messages totaux: ${user.totalMessages || 0}\n` +
+                `📅 Messages aujourd'hui: ${todayMessages}\n` +
+                `⏱️ Temps moyen: ${formatDuration(avgDuration)}\n\n` +
+                `🛡️ Score de respect: ${user.respectScore || 50}/100\n` +
+                `${getStars(user.respectScore || 50)}\n\n` +
+                `🌟 Avis positifs: ${user.positiveRatings || 0}\n` +
+                `⚠️ Avis négatifs: ${user.negativeRatings || 0}\n` +
+                `🏆 Badges: ${user.badges?.length || 0}\n` +
+                `⭐ Favoris: ${user.favorites?.length || 0}\n\n` +
+                `📅 Membre depuis: ${new Date(user.createdAt).toLocaleDateString('fr-FR')}\n\n` +
+                "Continuez comme ça ! 🎉";
 
             const quickReplies = [
                 {
                     content_type: 'text',
-                    title: '👤 Profil',
-                    payload: 'QUICK_PROFIL'
+                    title: '🏆 Badges',
+                    payload: 'QUICK_BADGES'
+                },
+                {
+                    content_type: 'text',
+                    title: '⭐ Favoris',
+                    payload: 'QUICK_FAVORIS'
                 },
                 {
                     content_type: 'text',
@@ -803,13 +927,8 @@ class MessageHandler {
                 },
                 {
                     content_type: 'text',
-                    title: '📈 Stats Bot',
-                    payload: 'QUICK_INFOS'
-                },
-                {
-                    content_type: 'text',
-                    title: '❓ Aide',
-                    payload: 'QUICK_HELP'
+                    title: '📋 Historique',
+                    payload: 'QUICK_HISTORIQUE'
                 }
             ];
 
@@ -1138,6 +1257,465 @@ class MessageHandler {
             default:
                 await this.showHelp(senderId);
         }
+    }
+
+    // ========================================
+    // 🆕 NOUVELLES FONCTIONNALITÉS
+    // ========================================
+
+    // Afficher la sélection de thème
+    async showThemeSelection(senderId) {
+        const message = {
+            text: "🎪 CHOISISSEZ UN THÈME DE DISCUSSION\n━━━━━━━━━━━━━━━━━━\n\nSélectionnez un sujet qui vous intéresse :",
+            quick_replies: [
+                { content_type: "text", title: "⚽ Sport", payload: "THEME_SPORT" },
+                { content_type: "text", title: "🎵 Musique", payload: "THEME_MUSIC" },
+                { content_type: "text", title: "🎮 Gaming", payload: "THEME_GAMING" },
+                { content_type: "text", title: "📚 Culture", payload: "THEME_CULTURE" },
+                { content_type: "text", title: "🌍 Voyage", payload: "THEME_VOYAGE" },
+                { content_type: "text", title: "💡 Tech", payload: "THEME_TECH" },
+                { content_type: "text", title: "🎨 Art", payload: "THEME_ART" },
+                { content_type: "text", title: "🔀 Aléatoire", payload: "THEME_RANDOM" }
+            ]
+        };
+        
+        await this.fb.sendQuickReplies(senderId, message);
+    }
+
+    // Afficher les favoris
+    async showFavorites(senderId) {
+        try {
+            const user = await User.findOne({ facebookId: senderId });
+            
+            if (!user || !user.favorites || user.favorites.length === 0) {
+                const message = {
+                    text: "⭐ FAVORIS\n━━━━━━━━━━━━━━━━━━\n\nVous n'avez pas encore de favoris.\n\nAjoutez quelqu'un en fin de conversation !",
+                    quick_replies: [
+                        { content_type: "text", title: "🔍 Chercher", payload: "QUICK_CHERCHER" },
+                        { content_type: "text", title: "📋 Historique", payload: "QUICK_HISTORIQUE" }
+                    ]
+                };
+                await this.fb.sendQuickReplies(senderId, message);
+                return;
+            }
+
+            let favText = "⭐ VOS FAVORIS\n━━━━━━━━━━━━━━━━━━\n\n";
+            
+            user.favorites.slice(0, 10).forEach((fav, index) => {
+                const date = new Date(fav.addedAt).toLocaleDateString('fr-FR');
+                favText += `${index + 1}. ${fav.pseudo}\n   Ajouté le ${date}\n\n`;
+            });
+            
+            favText += "Pour reconnecter:\n/reconnect [numéro]\n\nExemple: /reconnect 1";
+
+            const message = {
+                text: favText,
+                quick_replies: [
+                    { content_type: "text", title: "🔍 Chercher", payload: "QUICK_CHERCHER" },
+                    { content_type: "text", title: "📋 Historique", payload: "QUICK_HISTORIQUE" }
+                ]
+            };
+            
+            await this.fb.sendQuickReplies(senderId, message);
+            
+        } catch (error) {
+            console.error('Erreur affichage favoris:', error);
+            await this.fb.sendTextMessage(senderId, "❌ Erreur lors de l'affichage des favoris.");
+        }
+    }
+
+    // Afficher l'historique
+    async showHistory(senderId) {
+        try {
+            const user = await User.findOne({ facebookId: senderId });
+            
+            if (!user || !user.conversationHistory || user.conversationHistory.length === 0) {
+                const message = {
+                    text: "📋 HISTORIQUE\n━━━━━━━━━━━━━━━━━━\n\nAucune conversation pour le moment.\n\nCommencez à discuter !",
+                    quick_replies: [
+                        { content_type: "text", title: "🔍 Chercher", payload: "QUICK_CHERCHER" },
+                        { content_type: "text", title: "⭐ Favoris", payload: "QUICK_FAVORIS" }
+                    ]
+                };
+                await this.fb.sendQuickReplies(senderId, message);
+                return;
+            }
+
+            let historyText = "📋 DERNIÈRES CONVERSATIONS\n━━━━━━━━━━━━━━━━━━\n\n";
+            
+            const recentChats = user.conversationHistory.slice(-10).reverse();
+            
+            recentChats.forEach((chat, index) => {
+                const duration = chat.duration ? this.formatDuration(chat.duration) : '?';
+                const timeAgo = this.getTimeAgo(chat.endedAt);
+                const isFavorite = user.favorites?.some(f => f.userId === chat.partnerId);
+                
+                historyText += `${index + 1}. ${chat.partnerPseudo} ${isFavorite ? '⭐' : ''}\n`;
+                historyText += `   ${timeAgo} • ${duration}\n`;
+                historyText += `   ${chat.messageCount || 0} messages\n\n`;
+            });
+            
+            historyText += "Pour reconnecter:\n/reconnect [numéro]";
+
+            const message = {
+                text: historyText,
+                quick_replies: [
+                    { content_type: "text", title: "🔍 Chercher", payload: "QUICK_CHERCHER" },
+                    { content_type: "text", title: "⭐ Favoris", payload: "QUICK_FAVORIS" }
+                ]
+            };
+            
+            await this.fb.sendQuickReplies(senderId, message);
+            
+        } catch (error) {
+            console.error('Erreur affichage historique:', error);
+            await this.fb.sendTextMessage(senderId, "❌ Erreur lors de l'affichage de l'historique.");
+        }
+    }
+
+    // Afficher les badges
+    async showBadges(senderId) {
+        try {
+            const user = await User.findOne({ facebookId: senderId });
+            
+            if (!user) return;
+
+            let badgeText = "🏆 VOS BADGES\n━━━━━━━━━━━━━━━━━━\n\n";
+            
+            // Calculer les badges
+            const badges = [];
+            
+            if (user.totalConversations >= 10 && user.respectScore >= 80) {
+                badges.push("🛡️ Utilisateur Vérifié");
+            }
+            if (user.totalConversations >= 50) {
+                badges.push("💬 Grand Discuteur");
+            }
+            if (user.positiveRatings >= 20) {
+                badges.push("⭐ Populaire");
+            }
+            if (user.respectScore >= 95) {
+                badges.push("👑 Respect Maximum");
+            }
+            if (user.totalConversations >= 100) {
+                badges.push("🎖️ Vétéran");
+            }
+            
+            if (badges.length > 0) {
+                badges.forEach(badge => {
+                    badgeText += `${badge}\n`;
+                });
+            } else {
+                badgeText += "Aucun badge pour le moment.\n\n";
+                badgeText += "🎯 Objectifs:\n";
+                badgeText += "• 🛡️ Vérifié: 10 conv. + 80% respect\n";
+                badgeText += "• 💬 Grand Discuteur: 50 conversations\n";
+                badgeText += "• ⭐ Populaire: 20 avis positifs\n";
+            }
+            
+            badgeText += `\n📊 Score de respect: ${user.respectScore || 0}/100`;
+            badgeText += `\n🌟 Avis positifs: ${user.positiveRatings || 0}`;
+
+            const message = {
+                text: badgeText,
+                quick_replies: [
+                    { content_type: "text", title: "📊 Stats", payload: "QUICK_STATS" },
+                    { content_type: "text", title: "🔍 Chercher", payload: "QUICK_CHERCHER" }
+                ]
+            };
+            
+            await this.fb.sendQuickReplies(senderId, message);
+            
+        } catch (error) {
+            console.error('Erreur affichage badges:', error);
+            await this.fb.sendTextMessage(senderId, "❌ Erreur lors de l'affichage des badges.");
+        }
+    }
+
+    // Demander une reconnexion
+    async requestReconnect(senderId, targetNumber) {
+        try {
+            const user = await User.findOne({ facebookId: senderId });
+            
+            if (!user) return;
+
+            if (!targetNumber) {
+                await this.fb.sendTextMessage(senderId, 
+                    "❌ Format incorrect !\n\n" +
+                    "Utilisez: /reconnect [numéro]\n" +
+                    "Exemple: /reconnect 1\n\n" +
+                    "Consultez /historique ou /favoris pour voir les numéros."
+                );
+                return;
+            }
+
+            const index = parseInt(targetNumber) - 1;
+            
+            // Chercher d'abord dans les favoris
+            let targetUser = null;
+            if (user.favorites && user.favorites[index]) {
+                targetUser = user.favorites[index];
+            } 
+            // Sinon chercher dans l'historique
+            else if (user.conversationHistory && user.conversationHistory.length > 0) {
+                const recentChats = user.conversationHistory.slice(-10).reverse();
+                if (recentChats[index]) {
+                    targetUser = {
+                        userId: recentChats[index].partnerId,
+                        pseudo: recentChats[index].partnerPseudo
+                    };
+                }
+            }
+
+            if (!targetUser) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Numéro invalide.\n\n" +
+                    "Vérifiez /favoris ou /historique."
+                );
+                return;
+            }
+
+            // Vérifier si l'utilisateur cible existe et n'est pas bloqué
+            const targetUserDoc = await User.findOne({ facebookId: targetUser.userId });
+            
+            if (!targetUserDoc || targetUserDoc.isBlocked) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Cet utilisateur n'est plus disponible."
+                );
+                return;
+            }
+
+            // Ajouter la demande de reconnexion
+            await User.findOneAndUpdate(
+                { facebookId: senderId },
+                {
+                    $push: {
+                        reconnectRequests: {
+                            targetUserId: targetUser.userId,
+                            requestedAt: new Date(),
+                            status: 'pending'
+                        }
+                    }
+                }
+            );
+
+            // Notifier l'autre utilisateur
+            const message = {
+                text: `💌 DEMANDE DE RECONNEXION\n━━━━━━━━━━━━━━━━━━\n\n${user.pseudo} souhaite discuter à nouveau avec vous !\n\nVoulez-vous accepter ?`,
+                quick_replies: [
+                    { content_type: "text", title: "✅ Accepter", payload: `RECONNECT_ACCEPT_${senderId}` },
+                    { content_type: "text", title: "❌ Refuser", payload: `RECONNECT_DECLINE_${senderId}` }
+                ]
+            };
+            
+            await this.fb.sendQuickReplies(targetUser.userId, message);
+            
+            await this.fb.sendTextMessage(senderId,
+                "💌 Demande envoyée !\n\n" +
+                `${targetUser.pseudo} recevra votre demande.\n\n` +
+                "Vous serez notifié de sa réponse."
+            );
+            
+        } catch (error) {
+            console.error('Erreur demande reconnexion:', error);
+            await this.fb.sendTextMessage(senderId, "❌ Erreur lors de la demande.");
+        }
+    }
+
+    // Ajouter le partenaire actuel aux favoris
+    async addCurrentPartnerToFavorites(senderId) {
+        try {
+            const chatInfo = this.chatManager.activeChats.get(senderId);
+            
+            if (!chatInfo) {
+                await this.fb.sendTextMessage(senderId,
+                    "❌ Vous n'êtes pas en conversation.\n\n" +
+                    "Vous pourrez ajouter quelqu'un en fin de conversation."
+                );
+                return;
+            }
+
+            const partnerUser = await User.findOne({ facebookId: chatInfo.partnerId });
+            
+            await User.findOneAndUpdate(
+                { facebookId: senderId },
+                {
+                    $addToSet: {
+                        favorites: {
+                            userId: chatInfo.partnerId,
+                            pseudo: partnerUser?.pseudo || chatInfo.partnerPseudo,
+                            addedAt: new Date()
+                        }
+                    }
+                }
+            );
+
+            await this.fb.sendTextMessage(senderId,
+                `⭐ ${chatInfo.partnerPseudo} ajouté aux favoris !\n\n` +
+                "Vous pourrez demander une reconnexion plus tard avec /favoris"
+            );
+            
+        } catch (error) {
+            console.error('Erreur ajout favoris:', error);
+            await this.fb.sendTextMessage(senderId, "❌ Erreur lors de l'ajout aux favoris.");
+        }
+    }
+
+    // Soumettre un feedback post-conversation
+    async submitFeedback(senderId, rating) {
+        try {
+            const user = await User.findOne({ facebookId: senderId });
+            
+            if (!user || !user.conversationHistory || user.conversationHistory.length === 0) {
+                await this.fb.sendTextMessage(senderId, "❌ Aucune conversation récente à évaluer.");
+                return;
+            }
+
+            // Récupérer la dernière conversation
+            const lastChat = user.conversationHistory[user.conversationHistory.length - 1];
+            
+            if (!lastChat.chatId) {
+                await this.fb.sendTextMessage(senderId, "❌ Erreur: conversation introuvable.");
+                return;
+            }
+
+            // Enregistrer le feedback
+            await Chat.findByIdAndUpdate(lastChat.chatId, {
+                $push: {
+                    feedbacks: {
+                        userId: senderId,
+                        rating: rating,
+                        submittedAt: new Date()
+                    }
+                }
+            });
+
+            // Mettre à jour le score de respect du partenaire
+            const partnerUser = await User.findOne({ facebookId: lastChat.partnerId });
+            
+            if (partnerUser) {
+                let scoreChange = 0;
+                if (rating === 'excellent') {
+                    scoreChange = 5;
+                    partnerUser.positiveRatings = (partnerUser.positiveRatings || 0) + 1;
+                } else if (rating === 'good') {
+                    scoreChange = 2;
+                    partnerUser.positiveRatings = (partnerUser.positiveRatings || 0) + 1;
+                } else if (rating === 'average') {
+                    scoreChange = 0;
+                } else if (rating === 'bad') {
+                    scoreChange = -5;
+                    partnerUser.negativeRatings = (partnerUser.negativeRatings || 0) + 1;
+                }
+
+                partnerUser.respectScore = Math.max(0, Math.min(100, (partnerUser.respectScore || 50) + scoreChange));
+                await partnerUser.save();
+
+                // Vérifier si le partenaire mérite un nouveau badge
+                await this.checkAndAwardBadges(partnerUser);
+            }
+
+            const feedbackEmoji = {
+                'excellent': '😄',
+                'good': '🙂',
+                'average': '😐',
+                'bad': '😕'
+            };
+
+            const message = {
+                text: `${feedbackEmoji[rating]} Merci pour votre avis !\n\nVotre feedback nous aide à améliorer l'expérience pour tous.`,
+                quick_replies: [
+                    { content_type: "text", title: "🔍 Nouvelle conversation", payload: "QUICK_CHERCHER" },
+                    { content_type: "text", title: "📊 Mes stats", payload: "QUICK_STATS" }
+                ]
+            };
+            
+            await this.fb.sendQuickReplies(senderId, message);
+            
+        } catch (error) {
+            console.error('Erreur soumission feedback:', error);
+            await this.fb.sendTextMessage(senderId, "❌ Erreur lors de l'enregistrement du feedback.");
+        }
+    }
+
+    // Vérifier et attribuer des badges
+    async checkAndAwardBadges(user) {
+        try {
+            const newBadges = [];
+            
+            // Badge Utilisateur Vérifié
+            if (user.totalConversations >= 10 && user.respectScore >= 80) {
+                const hasBadge = user.badges?.some(b => b.name === 'Vérifié');
+                if (!hasBadge) {
+                    newBadges.push({ name: 'Vérifié', icon: '🛡️' });
+                }
+            }
+            
+            // Badge Grand Discuteur
+            if (user.totalConversations >= 50) {
+                const hasBadge = user.badges?.some(b => b.name === 'Grand Discuteur');
+                if (!hasBadge) {
+                    newBadges.push({ name: 'Grand Discuteur', icon: '💬' });
+                }
+            }
+            
+            // Badge Populaire
+            if (user.positiveRatings >= 20) {
+                const hasBadge = user.badges?.some(b => b.name === 'Populaire');
+                if (!hasBadge) {
+                    newBadges.push({ name: 'Populaire', icon: '⭐' });
+                }
+            }
+            
+            // Ajouter les nouveaux badges
+            if (newBadges.length > 0) {
+                await User.findByIdAndUpdate(user._id, {
+                    $push: { badges: { $each: newBadges } }
+                });
+                
+                // Notifier l'utilisateur
+                for (const badge of newBadges) {
+                    await this.fb.sendTextMessage(user.facebookId,
+                        `🎉 NOUVEAU BADGE DÉBLOQUÉ !\n━━━━━━━━━━━━━━━━━━\n\n${badge.icon} ${badge.name}\n\nFélicitations !`
+                    );
+                }
+            }
+            
+        } catch (error) {
+            console.error('Erreur vérification badges:', error);
+        }
+    }
+
+    // Formater la durée
+    formatDuration(seconds) {
+        if (!seconds) return '0s';
+        
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        
+        if (hours > 0) {
+            return `${hours}h ${minutes}min`;
+        } else if (minutes > 0) {
+            return `${minutes}min ${secs}s`;
+        } else {
+            return `${secs}s`;
+        }
+    }
+
+    // Calculer le temps écoulé
+    getTimeAgo(date) {
+        const now = new Date();
+        const diff = now - new Date(date);
+        const seconds = Math.floor(diff / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+        
+        if (days > 0) return `il y a ${days}j`;
+        if (hours > 0) return `il y a ${hours}h`;
+        if (minutes > 0) return `il y a ${minutes}min`;
+        return 'à l\'instant';
     }
 }
 
