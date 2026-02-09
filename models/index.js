@@ -2,17 +2,17 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
     facebookId: { type: String, required: true, unique: true },
-    pseudo: { type: String, default: 'Anonyme' }, // ⚠️ Retirer "required: true" ou ajouter une valeur par défaut
+    pseudo: { type: String, default: 'Anonyme' },
     createdAt: { type: Date, default: Date.now },
     totalConversations: { type: Number, default: 0 },
     totalMessages: { type: Number, default: 0 },
     rating: { type: Number, default: 5 },
     ratingCount: { type: Number, default: 0 },
     isBlocked: { type: Boolean, default: false },
-    blockedAt: { type: Date }, // Ajouter ce champ
-    blockReason: { type: String }, // Ajouter ce champ
-    warningCount: { type: Number, default: 0 }, // Ajouter ce champ
-    warnings: [{ // Ajouter ce champ
+    blockedAt: { type: Date },
+    blockReason: { type: String },
+    warningCount: { type: Number, default: 0 },
+    warnings: [{
         date: { type: Date },
         reason: { type: String },
         sentBy: { type: String }
@@ -22,12 +22,43 @@ const userSchema = new mongoose.Schema({
     language: { type: String, default: 'fr' },
     status: { 
         type: String, 
-        enum: ['offline', 'online', 'waiting', 'chatting', 'blocked'], // Ajouter 'blocked'
+        enum: ['offline', 'online', 'waiting', 'chatting', 'blocked'],
         default: 'offline' 
     },
     currentChat: { type: mongoose.Schema.Types.ObjectId, ref: 'Chat' },
     lastActivity: { type: Date, default: Date.now },
-    waitingForPseudo: { type: Boolean, default: false } // Ajouter ce champ
+    waitingForPseudo: { type: Boolean, default: false },
+    
+    // 🆕 NOUVEAUX CHAMPS POUR LES AMÉLIORATIONS
+    favorites: [{
+        userId: { type: String },
+        pseudo: { type: String },
+        addedAt: { type: Date, default: Date.now }
+    }],
+    conversationHistory: [{
+        partnerId: { type: String },
+        partnerPseudo: { type: String },
+        chatId: { type: mongoose.Schema.Types.ObjectId, ref: 'Chat' },
+        endedAt: { type: Date },
+        duration: { type: Number }, // en secondes
+        messageCount: { type: Number },
+        rating: { type: Number }
+    }],
+    preferredThemes: [{ type: String }], // Sport, Musique, Gaming, etc.
+    badges: [{
+        name: { type: String }, // "Vérifié", "Respectueux", etc.
+        earnedAt: { type: Date, default: Date.now },
+        icon: { type: String }
+    }],
+    respectScore: { type: Number, default: 0 }, // Score de 0 à 100
+    positiveRatings: { type: Number, default: 0 },
+    negativeRatings: { type: Number, default: 0 },
+    totalChatDuration: { type: Number, default: 0 }, // en secondes
+    reconnectRequests: [{
+        targetUserId: { type: String },
+        requestedAt: { type: Date, default: Date.now },
+        status: { type: String, enum: ['pending', 'accepted', 'declined', 'expired'], default: 'pending' }
+    }]
 });
 // Schéma Conversation
 const chatSchema = new mongoose.Schema({
@@ -47,13 +78,22 @@ const chatSchema = new mongoose.Schema({
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date },
     isActive: { type: Boolean, default: true },
-    theme: { type: String },
+    theme: { type: String }, // Sport, Musique, Gaming, etc.
     messageCount: { type: Number, default: 0 },
     ratings: [{
         userId: { type: String },
         rating: { type: Number, min: 1, max: 5 },
         comment: { type: String }
-    }]
+    }],
+    
+    // 🆕 NOUVEAUX CHAMPS
+    feedbacks: [{
+        userId: { type: String },
+        rating: { type: String, enum: ['excellent', 'good', 'average', 'bad'] },
+        submittedAt: { type: Date, default: Date.now }
+    }],
+    duration: { type: Number }, // Durée en secondes
+    endReason: { type: String, enum: ['normal', 'report', 'timeout', 'mutual'] }
 });
 
 // Schéma File d'attente
