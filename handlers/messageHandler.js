@@ -174,6 +174,75 @@ class MessageHandler {
                 return;
             }
 
+            // Si pas en conversation et pas une commande, vérifier si c'est un mot-clé
+            if (text) {
+                // Détection des thèmes par mots-clés
+                const themeKeywords = {
+                    'sport': 'THEME_SPORT',
+                    'sports': 'THEME_SPORT',
+                    'football': 'THEME_SPORT',
+                    'musique': 'THEME_MUSIC',
+                    'music': 'THEME_MUSIC',
+                    'gaming': 'THEME_GAMING',
+                    'game': 'THEME_GAMING',
+                    'jeux': 'THEME_GAMING',
+                    'jeu': 'THEME_GAMING',
+                    'culture': 'THEME_CULTURE',
+                    'voyage': 'THEME_VOYAGE',
+                    'voyages': 'THEME_VOYAGE',
+                    'travel': 'THEME_VOYAGE',
+                    'tech': 'THEME_TECH',
+                    'technologie': 'THEME_TECH',
+                    'technology': 'THEME_TECH',
+                    'art': 'THEME_ART',
+                    'arts': 'THEME_ART',
+                    'aleatoire': 'THEME_RANDOM',
+                    'aléatoire': 'THEME_RANDOM',
+                    'random': 'THEME_RANDOM',
+                    'hasard': 'THEME_RANDOM'
+                };
+
+                // Détection des actions par mots-clés
+                const actionKeywords = {
+                    'chercher': 'QUICK_CHERCHER',
+                    'cherche': 'QUICK_CHERCHER',
+                    'rechercher': 'QUICK_CHERCHER',
+                    'search': 'QUICK_CHERCHER',
+                    'favoris': 'QUICK_FAVORIS',
+                    'favori': 'QUICK_FAVORIS',
+                    'favorite': 'QUICK_FAVORIS',
+                    'favorites': 'QUICK_FAVORIS',
+                    'historique': 'QUICK_HISTORIQUE',
+                    'history': 'QUICK_HISTORIQUE',
+                    'badges': 'QUICK_BADGES',
+                    'badge': 'QUICK_BADGES',
+                    'stats': 'QUICK_STATS',
+                    'statistiques': 'QUICK_STATS',
+                    'profil': 'QUICK_PROFIL',
+                    'profile': 'QUICK_PROFIL',
+                    'themes': 'QUICK_THEMES',
+                    'theme': 'QUICK_THEMES',
+                    'thèmes': 'QUICK_THEMES',
+                    'thème': 'QUICK_THEMES'
+                };
+
+                // Vérifier si c'est un thème
+                const themePayload = themeKeywords[text];
+                if (themePayload) {
+                    console.log(`🎯 Thème détecté par mot-clé: ${text} -> ${themePayload}`);
+                    await this.handleQuickReplyPayload(senderId, themePayload);
+                    return;
+                }
+
+                // Vérifier si c'est une action
+                const actionPayload = actionKeywords[text];
+                if (actionPayload) {
+                    console.log(`⚡ Action détectée par mot-clé: ${text} -> ${actionPayload}`);
+                    await this.handleQuickReplyPayload(senderId, actionPayload);
+                    return;
+                }
+            }
+
             // Si pas en conversation et pas une commande, afficher l'aide
             await this.showHelp(senderId);
 
@@ -586,22 +655,22 @@ class MessageHandler {
                 "📝 COMMANDES DISPONIBLES :\n" +
                 "━━━━━━━━━━━━━━━━━━\n" +
                 "🔍 CONVERSATION\n" +
-                "• /chercher - Trouver quelqu'un\n" +
-                "• /themes - Choisir un thème\n" +
-                "• /stop - Quitter la conversation\n\n" +
+                "• Chercher (ou /chercher)\n" +
+                "• Themes (ou /themes)\n" +
+                "• /stop - Quitter\n\n" +
                 "⭐ FAVORIS & HISTORIQUE\n" +
-                "• /favoris - Voir vos favoris\n" +
-                "• /historique - Dernières conversations\n" +
-                "• /reconnect [N] - Reconnecter avec quelqu'un\n\n" +
+                "• Favoris (ou /favoris)\n" +
+                "• Historique (ou /historique)\n" +
+                "• /reconnect [N]\n\n" +
                 "👤 PROFIL\n" +
-                "• /profil - Voir votre profil\n" +
-                "• /stats - Vos statistiques\n" +
-                "• /badges - Vos badges\n" +
+                "• Profil (ou /profil)\n" +
+                "• Stats (ou /stats)\n" +
+                "• Badges (ou /badges)\n" +
                 "• /pseudo - Changer de nom\n\n" +
                 "🛡️ SÉCURITÉ\n" +
-                "• /signaler - Signaler l'utilisateur\n" +
-                "• /feedback - Suggestions\n\n" +
-                "Ou utilisez les boutons :";
+                "• /signaler\n" +
+                "• /feedback\n\n" +
+                "💡 Tapez le mot-clé ou utilisez les boutons :";
             
             quickReplies = [
                 {
@@ -1266,7 +1335,17 @@ class MessageHandler {
     // Afficher la sélection de thème
     async showThemeSelection(senderId) {
         const message = {
-            text: "🎪 CHOISISSEZ UN THÈME DE DISCUSSION\n━━━━━━━━━━━━━━━━━━\n\nSélectionnez un sujet qui vous intéresse :",
+            text: "🎪 CHOISISSEZ UN THÈME DE DISCUSSION\n━━━━━━━━━━━━━━━━━━\n\n" +
+                  "Sélectionnez un sujet qui vous intéresse :\n\n" +
+                  "⚽ Sport\n" +
+                  "🎵 Musique\n" +
+                  "🎮 Gaming\n" +
+                  "📚 Culture\n" +
+                  "🌍 Voyage\n" +
+                  "💡 Tech\n" +
+                  "🎨 Art\n" +
+                  "🔀 Aléatoire\n\n" +
+                  "💡 Tapez simplement le nom du thème (ex: Sport)",
             quick_replies: [
                 { content_type: "text", title: "⚽ Sport", payload: "THEME_SPORT" },
                 { content_type: "text", title: "🎵 Musique", payload: "THEME_MUSIC" },
@@ -1289,7 +1368,10 @@ class MessageHandler {
             
             if (!user || !user.favorites || user.favorites.length === 0) {
                 const message = {
-                    text: "⭐ FAVORIS\n━━━━━━━━━━━━━━━━━━\n\nVous n'avez pas encore de favoris.\n\nAjoutez quelqu'un en fin de conversation !",
+                    text: "⭐ FAVORIS\n━━━━━━━━━━━━━━━━━━\n\n" +
+                          "Vous n'avez pas encore de favoris.\n\n" +
+                          "Ajoutez quelqu'un en fin de conversation !\n\n" +
+                          "💡 Tapez: Chercher ou Historique",
                     quick_replies: [
                         { content_type: "text", title: "🔍 Chercher", payload: "QUICK_CHERCHER" },
                         { content_type: "text", title: "📋 Historique", payload: "QUICK_HISTORIQUE" }
@@ -1306,7 +1388,9 @@ class MessageHandler {
                 favText += `${index + 1}. ${fav.pseudo}\n   Ajouté le ${date}\n\n`;
             });
             
-            favText += "Pour reconnecter:\n/reconnect [numéro]\n\nExemple: /reconnect 1";
+            favText += "Pour reconnecter:\n/reconnect [numéro]\n\n" +
+                       "Exemple: /reconnect 1\n\n" +
+                       "💡 Ou tapez: Chercher, Historique";
 
             const message = {
                 text: favText,
@@ -1331,7 +1415,10 @@ class MessageHandler {
             
             if (!user || !user.conversationHistory || user.conversationHistory.length === 0) {
                 const message = {
-                    text: "📋 HISTORIQUE\n━━━━━━━━━━━━━━━━━━\n\nAucune conversation pour le moment.\n\nCommencez à discuter !",
+                    text: "📋 HISTORIQUE\n━━━━━━━━━━━━━━━━━━\n\n" +
+                          "Aucune conversation pour le moment.\n\n" +
+                          "Commencez à discuter !\n\n" +
+                          "💡 Tapez: Chercher ou Favoris",
                     quick_replies: [
                         { content_type: "text", title: "🔍 Chercher", payload: "QUICK_CHERCHER" },
                         { content_type: "text", title: "⭐ Favoris", payload: "QUICK_FAVORIS" }
@@ -1355,7 +1442,8 @@ class MessageHandler {
                 historyText += `   ${chat.messageCount || 0} messages\n\n`;
             });
             
-            historyText += "Pour reconnecter:\n/reconnect [numéro]";
+            historyText += "Pour reconnecter:\n/reconnect [numéro]\n\n" +
+                           "💡 Ou tapez: Chercher, Favoris";
 
             const message = {
                 text: historyText,
@@ -1415,6 +1503,7 @@ class MessageHandler {
             
             badgeText += `\n📊 Score de respect: ${user.respectScore || 0}/100`;
             badgeText += `\n🌟 Avis positifs: ${user.positiveRatings || 0}`;
+            badgeText += `\n\n💡 Tapez: Stats ou Chercher`;
 
             const message = {
                 text: badgeText,
