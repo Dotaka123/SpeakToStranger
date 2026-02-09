@@ -216,6 +216,10 @@ class ChatManager {
                 return null;
             }
             
+            // Récupérer les infos complètes des utilisateurs pour les badges
+            const user1Doc = await User.findOne({ facebookId: user1.userId });
+            const user2Doc = await User.findOne({ facebookId: user2.userId });
+            
             // Créer le chat en base de données
             const chat = await Chat.create({
                 participants: [
@@ -230,10 +234,12 @@ class ChatManager {
                 ],
                 userId1: user1.userId,
                 userId2: user2.userId,
+                startTime: new Date(),
                 startedAt: new Date(),
                 lastActivity: new Date(),
                 isActive: true,
-                messageCount: 0
+                messageCount: 0,
+                theme: user1.preferences?.theme || user2.preferences?.theme
             });
 
             // Stocker dans la map active ATOMIQUEMENT
@@ -249,28 +255,52 @@ class ChatManager {
                 partnerPseudo: user1.pseudo || 'Anonyme'
             });
 
-            // Messages de connexion
-            const message1 = 
-                "🎉 MATCH TROUVÉ !\n" +
-                "━━━━━━━━━━━━━━━━━━\n" +
-                `Vous êtes connecté avec : ${user2.pseudo || 'Anonyme'}\n\n` +
-                "💬 Dites bonjour pour commencer !\n\n" +
-                "Commandes disponibles :\n" +
-                "/stop - Terminer la conversation\n" +
-                "/signaler - Signaler un comportement inapproprié";
+            // Fonction pour générer l'info utilisateur
+            const getUserInfo = (user, userDoc) => {
+                let info = '';
+                
+                // Badge vérifié
+                if (userDoc && userDoc.totalConversations >= 10 && userDoc.respectScore >= 80) {
+                    info += '🛡️ Utilisateur Vérifié';
+                    const convCount = userDoc.totalConversations;
+                    info += ` (${convCount} conv.)\n`;
+                }
+                
+                // Score de respect
+                if (userDoc && userDoc.respectScore >= 90) {
+                    info += `Score de respect: ⭐⭐⭐⭐⭐\n`;
+                } else if (userDoc && userDoc.respectScore >= 70) {
+                    info += `Score de respect: ⭐⭐⭐⭐\n`;
+                }
+                
+                return info;
+            };
 
-            const message2 = 
-                "🎉 MATCH TROUVÉ !\n" +
-                "━━━━━━━━━━━━━━━━━━\n" +
-                `Vous êtes connecté avec : ${user1.pseudo || 'Anonyme'}\n\n` +
-                "💬 Dites bonjour pour commencer !\n\n" +
-                "Commandes disponibles :\n" +
-                "/stop - Terminer la conversation\n" +
-                "/signaler - Signaler un comportement inapproprié";
+            const user1Info = getUserInfo(user1, user2Doc); // Info du partenaire pour user1
+            const user2Info = getUserInfo(user2, user1Doc); // Info du partenaire pour user2
+
+            // 🆕 Messages de connexion améliorés
+            const message1 = {
+                text: `🎉 CONVERSATION DÉMARRÉE\n━━━━━━━━━━━━━━━━━━\n\nVous êtes connecté avec ${user2.pseudo || 'Anonyme'}\n${user1Info ? user1Info + '\n' : ''}💬 Discutez librement et respectueusement\n🛡️ Protection anti-harcèlement active\n\n${chat.theme ? `📌 Thème: ${chat.theme}\n\n` : ''}Commandes: /stop | /signaler | /favoris`,
+                quick_replies: [
+                    { content_type: "text", title: "⭐ Ajouter favoris", payload: "QUICK_ADD_FAV" },
+                    { content_type: "text", title: "🚫 Signaler", payload: "QUICK_SIGNALER" },
+                    { content_type: "text", title: "📊 Stats", payload: "QUICK_STATS" }
+                ]
+            };
+
+            const message2 = {
+                text: `🎉 CONVERSATION DÉMARRÉE\n━━━━━━━━━━━━━━━━━━\n\nVous êtes connecté avec ${user1.pseudo || 'Anonyme'}\n${user2Info ? user2Info + '\n' : ''}💬 Discutez librement et respectueusement\n🛡️ Protection anti-harcèlement active\n\n${chat.theme ? `📌 Thème: ${chat.theme}\n\n` : ''}Commandes: /stop | /signaler | /favoris`,
+                quick_replies: [
+                    { content_type: "text", title: "⭐ Ajouter favoris", payload: "QUICK_ADD_FAV" },
+                    { content_type: "text", title: "🚫 Signaler", payload: "QUICK_SIGNALER" },
+                    { content_type: "text", title: "📊 Stats", payload: "QUICK_STATS" }
+                ]
+            };
 
             await Promise.all([
-                this.fb.sendTextMessage(user1.userId, message1),
-                this.fb.sendTextMessage(user2.userId, message2)
+                this.fb.sendQuickReplies(user1.userId, message1),
+                this.fb.sendQuickReplies(user2.userId, message2)
             ]);
 
             // Mettre à jour les stats
@@ -279,7 +309,7 @@ class ChatManager {
                 { $inc: { totalConversations: 1 } }
             );
 
-            console.log(`✅ Chat créé avec succès: ${user1.pseudo} ↔ ${user2.pseudo}`);
+            console.log(`✅ Chat créé avec succès: ${user1.pseudo} ↔ ${user2.pseudo}${chat.theme ? ` (${chat.theme})` : ''}`);
             return chat;
 
         } catch (error) {
@@ -329,42 +359,127 @@ class ChatManager {
         if (!chat) return false;
 
         try {
+            // Récupérer les infos du chat depuis la DB
+            const chatDoc = await Chat.findById(chat.chatId);
+            if (!chatDoc) return false;
+
+            const startTime = chatDoc.startTime || chatDoc.startedAt;
+            const endTime = new Date();
+            const duration = startTime ? Math.floor((endTime - startTime) / 1000) : 0;
+
             // Mettre à jour en base de données
             await Chat.findByIdAndUpdate(chat.chatId, {
                 isActive: false,
-                endedAt: new Date(),
-                endReason: reason
+                endTime: endTime,
+                endedAt: endTime,
+                endReason: reason,
+                duration: duration
             });
+
+            // 🆕 AJOUTER À L'HISTORIQUE DES DEUX UTILISATEURS
+            const user1 = await User.findOne({ facebookId: userId });
+            const user2 = await User.findOne({ facebookId: chat.partnerId });
+
+            const historyEntry1 = {
+                partnerId: chat.partnerId,
+                partnerPseudo: chat.partnerPseudo,
+                chatId: chat.chatId,
+                endedAt: endTime,
+                duration: duration,
+                messageCount: chatDoc.messageCount || 0
+            };
+
+            const historyEntry2 = {
+                partnerId: userId,
+                partnerPseudo: user1?.pseudo || 'Anonyme',
+                chatId: chat.chatId,
+                endedAt: endTime,
+                duration: duration,
+                messageCount: chatDoc.messageCount || 0
+            };
+
+            await User.findOneAndUpdate(
+                { facebookId: userId },
+                { 
+                    $push: { 
+                        conversationHistory: {
+                            $each: [historyEntry1],
+                            $slice: -20  // Garder seulement les 20 dernières
+                        }
+                    },
+                    totalChatDuration: (user1?.totalChatDuration || 0) + duration
+                }
+            );
+
+            await User.findOneAndUpdate(
+                { facebookId: chat.partnerId },
+                { 
+                    $push: { 
+                        conversationHistory: {
+                            $each: [historyEntry2],
+                            $slice: -20
+                        }
+                    },
+                    totalChatDuration: (user2?.totalChatDuration || 0) + duration
+                }
+            );
 
             // Retirer de la map active
             this.activeChats.delete(userId);
             this.activeChats.delete(chat.partnerId);
 
-            // Messages de fin
-            const endMessage1 = 
-                "🔚 Conversation terminée.\n" +
-                "━━━━━━━━━━━━━━━━━━\n\n" +
-                "J'espère que vous avez passé un bon moment !\n\n" +
-                "Que voulez-vous faire ?\n" +
-                "/chercher - Trouver un nouveau partenaire\n" +
-                "/stats - Voir vos statistiques\n" +
-                "/help - Afficher l'aide";
+            // Formater la durée
+            const formatDuration = (secs) => {
+                const hours = Math.floor(secs / 3600);
+                const minutes = Math.floor((secs % 3600) / 60);
+                const seconds = secs % 60;
+                if (hours > 0) return `${hours}h ${minutes}min`;
+                if (minutes > 0) return `${minutes}min ${seconds}s`;
+                return `${seconds}s`;
+            };
 
-            const endMessage2 = 
-                "🔚 Votre partenaire a quitté la conversation.\n" +
-                "━━━━━━━━━━━━━━━━━━\n\n" +
-                "Que voulez-vous faire ?\n" +
-                "/chercher - Trouver un nouveau partenaire\n" +
-                "/stats - Voir vos statistiques\n" +
-                "/help - Afficher l'aide";
+            // 🆕 MESSAGES AMÉLIORÉS AVEC QUICK REPLIES
+            const endMessage1 = {
+                text: `💬 CONVERSATION TERMINÉE\n━━━━━━━━━━━━━━━━━━\n\nAvec: ${chat.partnerPseudo}\nDurée: ${formatDuration(duration)}\nMessages: ${chatDoc.messageCount || 0}\n\nMerci d'avoir utilisé SpeakToStranger !`,
+                quick_replies: [
+                    { content_type: "text", title: "⭐ Ajouter aux favoris", payload: "QUICK_ADD_FAV" },
+                    { content_type: "text", title: "🔍 Nouvelle conversation", payload: "QUICK_CHERCHER" },
+                    { content_type: "text", title: "📋 Historique", payload: "QUICK_HISTORIQUE" }
+                ]
+            };
 
-            await this.fb.sendTextMessage(userId, endMessage1);
+            const endMessage2 = {
+                text: `💬 CONVERSATION TERMINÉE\n━━━━━━━━━━━━━━━━━━\n\nVotre partenaire a quitté la conversation.\n\nAvec: ${user1?.pseudo || 'Anonyme'}\nDurée: ${formatDuration(duration)}\nMessages: ${chatDoc.messageCount || 0}`,
+                quick_replies: [
+                    { content_type: "text", title: "🔍 Nouvelle conversation", payload: "QUICK_CHERCHER" },
+                    { content_type: "text", title: "📊 Mes stats", payload: "QUICK_STATS" },
+                    { content_type: "text", title: "📋 Historique", payload: "QUICK_HISTORIQUE" }
+                ]
+            };
+
+            await this.fb.sendQuickReplies(userId, endMessage1);
             
             if (reason !== 'reported') {
-                await this.fb.sendTextMessage(chat.partnerId, endMessage2);
+                await this.fb.sendQuickReplies(chat.partnerId, endMessage2);
+
+                // 🆕 DEMANDER LE FEEDBACK (seulement si pas de report)
+                setTimeout(async () => {
+                    const feedbackMessage = {
+                        text: "⭐ COMMENT ÉTAIT LA CONVERSATION ?\n━━━━━━━━━━━━━━━━━━\n\nVotre avis nous aide à améliorer l'expérience !",
+                        quick_replies: [
+                            { content_type: "text", title: "😄 Excellente", payload: "FEEDBACK_EXCELLENT" },
+                            { content_type: "text", title: "🙂 Bonne", payload: "FEEDBACK_GOOD" },
+                            { content_type: "text", title: "😐 Moyenne", payload: "FEEDBACK_AVERAGE" },
+                            { content_type: "text", title: "😕 Mauvaise", payload: "FEEDBACK_BAD" }
+                        ]
+                    };
+
+                    await this.fb.sendQuickReplies(userId, feedbackMessage);
+                    await this.fb.sendQuickReplies(chat.partnerId, feedbackMessage);
+                }, 2000);
             }
 
-            console.log(`✅ Chat terminé entre ${userId} et ${chat.partnerId}`);
+            console.log(`✅ Chat terminé entre ${userId} et ${chat.partnerId} - ${formatDuration(duration)}`);
             return true;
 
         } catch (error) {
